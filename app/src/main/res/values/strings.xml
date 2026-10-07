@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">مكتبة الفيديوهات</string>
+    <string name="add_section">إضافة قسم جديد</string>
+    <string name="new_section_hint">اسم القسم الجديد</string>
+    <string name="add">إضافة</string>
+    <string name="cancel">إلغاء</string>
+    <string name="empty_sections">لا توجد أقسام بعد</string>
 </resources>
