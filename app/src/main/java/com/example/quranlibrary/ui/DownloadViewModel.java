@@ -91,7 +91,8 @@ public class DownloadViewModel extends AndroidViewModel {
                             getApplication(), videoId, cleanUrl,
                             outputDir.getAbsolutePath(), cleanTitle);
                     isDownloading.setValue(true);
-                    statusMessage.setValue("بدأ التحميل في الخلفية");
+                    String ffPath = com.example.quranlibrary.download.FFmpegHelper.getFFmpegPath(getApplication());
+                    statusMessage.setValue("بدأ التحميل. FFmpeg=" + (ffPath.isEmpty() ? "غير موجود" : ffPath));
                 } catch (Exception e) {
                     isDownloading.setValue(false);
                     statusMessage.setValue("فشل بدء التحميل: " + e.getMessage());
