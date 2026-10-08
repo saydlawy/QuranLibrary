@@ -12,13 +12,21 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.quranlibrary.R;
 import com.example.quranlibrary.data.db.Video;
+import com.example.quranlibrary.data.model.DownloadStatus;
 
 import java.util.Objects;
 
 public class VideoAdapter extends ListAdapter<Video, VideoAdapter.VideoViewHolder> {
 
-    public VideoAdapter() {
+    public interface OnVideoClickListener {
+        void onVideoClick(Video video);
+    }
+
+    private final OnVideoClickListener listener;
+
+    public VideoAdapter(@NonNull OnVideoClickListener listener) {
         super(DIFF_CALLBACK);
+        this.listener = listener;
     }
 
     private static final DiffUtil.ItemCallback<Video> DIFF_CALLBACK =
@@ -35,7 +43,8 @@ public class VideoAdapter extends ListAdapter<Video, VideoAdapter.VideoViewHolde
                             && Objects.equals(oldItem.downloadStatus, newItem.downloadStatus)
                             && oldItem.progress == newItem.progress
                             && equalsNullable(oldItem.filePath, newItem.filePath)
-                            && equalsNullable(oldItem.errorMessage, newItem.errorMessage);
+                            && equalsNullable(oldItem.errorMessage, newItem.errorMessage)
+                            && oldItem.watchPositionMs == newItem.watchPositionMs;
                 }
             };
 
@@ -56,7 +65,7 @@ public class VideoAdapter extends ListAdapter<Video, VideoAdapter.VideoViewHolde
         holder.bind(getItem(position));
     }
 
-    static class VideoViewHolder extends RecyclerView.ViewHolder {
+    class VideoViewHolder extends RecyclerView.ViewHolder {
         private final TextView title;
         private final TextView status;
         private final TextView path;
@@ -66,6 +75,12 @@ public class VideoAdapter extends ListAdapter<Video, VideoAdapter.VideoViewHolde
             title = itemView.findViewById(R.id.video_title);
             status = itemView.findViewById(R.id.video_status);
             path = itemView.findViewById(R.id.video_path);
+            itemView.setOnClickListener(v -> {
+                int adapterPosition = getBindingAdapterPosition();
+                if (adapterPosition != RecyclerView.NO_POSITION) {
+                    listener.onVideoClick(getItem(adapterPosition));
+                }
+            });
         }
 
         void bind(Video video) {
@@ -77,10 +92,10 @@ public class VideoAdapter extends ListAdapter<Video, VideoAdapter.VideoViewHolde
         }
 
         private String statusText(Video video) {
-            if (video.downloadStatus == com.example.quranlibrary.data.model.DownloadStatus.COMPLETED) {
+            if (video.downloadStatus == DownloadStatus.COMPLETED) {
                 return itemView.getContext().getString(R.string.download_completed);
             }
-            if (video.downloadStatus == com.example.quranlibrary.data.model.DownloadStatus.FAILED) {
+            if (video.downloadStatus == DownloadStatus.FAILED) {
                 return itemView.getContext().getString(R.string.download_failed);
             }
             return video.downloadStatus.name() + " (" + video.progress + "%)";

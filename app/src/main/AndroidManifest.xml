@@ -28,6 +28,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.VideoPlayerActivity"
+            android:exported="false"
+            android:screenOrientation="sensor" />
+
+        <activity
             android:name=".ui.DownloadActivity"
             android:exported="false"
             android:label="@string/download_video" />
