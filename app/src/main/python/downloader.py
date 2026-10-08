@@ -12,6 +12,7 @@ cb:      Java object implementing DownloadCallback (may be None)
 """
 import json
 import os
+import subprocess
 import threading
 import traceback
 from urllib.parse import parse_qs, urlparse
@@ -108,7 +109,24 @@ def _fmt_eta(sec):
 
 
 def _ffmpeg_ok(path):
-    return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
+    """Return True only if ffmpeg exists AND actually runs.
+
+    os.access(X_OK) checks mode bits only and ignores noexec mount
+    options used by Android on /data/app. The only reliable test is
+    to try executing the binary.
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        proc = subprocess.run(
+            [path, "-version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
 
 
 def _format_selector(quality, has_ffmpeg):
