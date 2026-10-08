@@ -23,6 +23,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.quranlibrary.ui.DownloadActivity;
 import com.example.quranlibrary.ui.MainViewModel;
 import com.example.quranlibrary.ui.SectionsAdapter;
+import com.example.quranlibrary.ui.SectionVideosActivity;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -53,7 +54,10 @@ public class MainActivity extends AppCompatActivity {
         FloatingActionButton fab = findViewById(R.id.addSectionFab);
 
         adapter = new SectionsAdapter(section ->
-                Toast.makeText(this, "اخترت: " + section.name, Toast.LENGTH_SHORT).show());
+                Intent intent = new Intent(this, SectionVideosActivity.class);
+                intent.putExtra(SectionVideosActivity.EXTRA_SECTION_ID, section.id);
+                intent.putExtra(SectionVideosActivity.EXTRA_SECTION_NAME, section.name);
+                startActivity(intent));
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(adapter);
 
