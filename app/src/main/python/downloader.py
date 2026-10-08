@@ -1,14 +1,22 @@
 """
 وحدة تحميل الفيديوهات عبر yt-dlp.
-- progress_hook محصّن ضد الأخطاء لضمان استمرار التحميل.
-- تسجيل تفصيلي للأخطاء.
+- تدعم التحميل متعدد الاتصالات.
+- تستخدم FFmpeg المُضمَّن في التطبيق لدمج الصوت والفيديو.
+- تمرر التقدم إلى Java عبر callback.
 """
 import os
 import traceback
 import yt_dlp
 
 
-def download(url, output_dir, callback=None):
+def download(url, output_dir, ffmpeg_path, callback=None):
+    """
+    :param url: رابط الفيديو.
+    :param output_dir: مجلد الحفظ.
+    :param ffmpeg_path: مسار تنفيذي FFmpeg المُضمَّن.
+    :param callback: كائن Java فيه onProgress(percent, status, message).
+    :return: dict فيه بيانات الفيديو النهائية.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     def safe_progress(percent, status, message):
@@ -46,6 +54,16 @@ def download(url, output_dir, callback=None):
         'socket_timeout': 30,
     }
 
+    # تمرير مسار FFmpeg المُضمَّن
+    if ffmpeg_path and os.path.exists(ffmpeg_path):
+        ydl_opts['ffmpeg_location'] = ffmpeg_path
+    else:
+        return {
+            'success': False, 'file_path': '', 'title': '',
+            'duration_ms': 0, 'size_bytes': 0,
+            'error': f'FFmpeg not found at: {ffmpeg_path}',
+        }
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -53,12 +71,19 @@ def download(url, output_dir, callback=None):
                 return {
                     'success': False, 'file_path': '', 'title': '',
                     'duration_ms': 0, 'size_bytes': 0,
-                    'error': 'extract_info returned None (possibly a playlist or unsupported URL)',
+                    'error': 'extract_info returned None',
                 }
             file_path = ydl.prepare_filename(info)
             if not file_path.endswith('.mp4'):
                 file_path = os.path.splitext(file_path)[0] + '.mp4'
-            size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            if not os.path.exists(file_path):
+                return {
+                    'success': False, 'file_path': file_path,
+                    'title': info.get('title', 'unknown'),
+                    'duration_ms': 0, 'size_bytes': 0,
+                    'error': f'File not found after download: {file_path}',
+                }
+            size = os.path.getsize(file_path)
             return {
                 'success': True,
                 'file_path': file_path,
@@ -73,5 +98,5 @@ def download(url, output_dir, callback=None):
         return {
             'success': False, 'file_path': '', 'title': '',
             'duration_ms': 0, 'size_bytes': 0,
-            'error': f"{type(e).__name__}: {str(e)[:300]}",
+            'error': f"{type(e).__name__}: {str(e)[:400]}",
         }

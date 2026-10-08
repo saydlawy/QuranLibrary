@@ -55,7 +55,8 @@ public class DownloadJobService extends JobService {
 
         VideoDao dao = AppDatabase.getInstance(this).videoDao();
 
-        PythonBridge.download(url, outputDir,
+        String ffmpegPath = FFmpegHelper.getFFmpegPath(this);
+        PythonBridge.download(url, outputDir, ffmpegPath,
                 (percent, status, message) -> {
                     if (jobCancelled) return;
                     updateNotification(title, percent);

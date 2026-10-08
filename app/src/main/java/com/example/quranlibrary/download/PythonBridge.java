@@ -10,20 +10,11 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * الجسر بين Java و Python.
- * - يهيّئ Python مرة واحدة.
- * - ينفّذ عمليات التحميل في Thread منفصل.
- * - يحوّل نتيجة Python (dict) إلى كائن Java.
- */
 public class PythonBridge {
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static volatile boolean initialized = false;
 
-    /**
-     * تهيئة Python. يجب استدعاؤها مرة واحدة قبل أي عملية تحميل.
-     */
     public static synchronized void init(Context context) {
         if (!initialized) {
             if (!Python.isStarted()) {
@@ -38,9 +29,6 @@ public class PythonBridge {
         void onError(String message);
     }
 
-    /**
-     * نتيجة التحميل كما تعيدها Python.
-     */
     public static class DownloadResult {
         public boolean success;
         public String filePath;
@@ -50,24 +38,20 @@ public class PythonBridge {
         public String error;
     }
 
-    /**
-     * يشغّل التحميل في الخلفية.
-     */
     public static void download(String url,
                                 String outputDir,
+                                String ffmpegPath,
                                 DownloadProgressCallback progressCallback,
                                 DownloadResultCallback resultCallback) {
         EXECUTOR.execute(() -> {
             try {
                 Python py = Python.getInstance();
                 PyObject module = py.getModule("downloader");
-                PyObject result = module.callAttr("download", url, outputDir, progressCallback);
+                PyObject result = module.callAttr("download",
+                        url, outputDir, ffmpegPath, progressCallback);
 
                 DownloadResult dr = parseResult(result);
-
-                if (resultCallback != null) {
-                    resultCallback.onComplete(dr);
-                }
+                if (resultCallback != null) resultCallback.onComplete(dr);
             } catch (Exception e) {
                 if (resultCallback != null) {
                     String msg = e.getMessage() == null ? "unknown error" : e.getMessage();
@@ -77,9 +61,6 @@ public class PythonBridge {
         });
     }
 
-    /**
-     * يحوّل PyObject (dict) إلى DownloadResult.
-     */
     private static DownloadResult parseResult(PyObject result) {
         DownloadResult dr = new DownloadResult();
         Map<PyObject, PyObject> map = result.asMap();
