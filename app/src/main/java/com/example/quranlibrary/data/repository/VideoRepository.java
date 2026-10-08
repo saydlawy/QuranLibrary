@@ -11,9 +11,6 @@ import com.example.quranlibrary.data.model.DownloadStatus;
 
 import java.util.List;
 
-/**
- * Repository للفيديوهات. نقطة الوصول الوحيدة لبيانات الفيديو من طبقة الواجهة.
- */
 public class VideoRepository {
 
     private final VideoDao videoDao;
@@ -35,20 +32,18 @@ public class VideoRepository {
         return videoDao.getVideoById(id);
     }
 
+    public LiveData<Video> getVideoByIdLive(int id) {
+        return videoDao.getVideoByIdLive(id);
+    }
+
     public List<Video> getIncompleteDownloads() {
         return videoDao.getIncompleteDownloads();
     }
 
-    /**
-     * إدراج فيديو جديد، وإرجاع الـ id المُولَّد.
-     */
     public long insert(Video video) {
         return videoDao.insert(video);
     }
 
-    /**
-     * إدراج في الخلفية دون انتظار النتيجة (للاستخدام من الـ UI).
-     */
     public void insertAsync(Video video) {
         AppDatabase.getWriteExecutor().execute(() -> videoDao.insert(video));
     }
@@ -59,6 +54,11 @@ public class VideoRepository {
 
     public void updateStatus(int id, DownloadStatus status) {
         AppDatabase.getWriteExecutor().execute(() -> videoDao.updateStatus(id, status));
+    }
+
+    public void updateStatusWithError(int id, DownloadStatus status, String error) {
+        AppDatabase.getWriteExecutor().execute(() ->
+                videoDao.updateStatusWithError(id, status, error));
     }
 
     public void updateProgress(int id, int progress, DownloadStatus status) {

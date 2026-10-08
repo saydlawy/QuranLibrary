@@ -11,11 +11,6 @@ import com.example.quranlibrary.data.model.DownloadStatus;
 
 import java.util.List;
 
-/**
- * DAO للفيديوهات.
- * - استعلامات LiveData للواجهة التفاعلية.
- * - استعلامات خاصة بنظام التحميل (لاستئناف المهام غير المكتملة بعد إعادة التشغيل).
- */
 @Dao
 public interface VideoDao {
 
@@ -28,12 +23,12 @@ public interface VideoDao {
     @Query("SELECT * FROM videos WHERE id = :id LIMIT 1")
     Video getVideoById(int id);
 
+    @Query("SELECT * FROM videos WHERE id = :id LIMIT 1")
+    LiveData<Video> getVideoByIdLive(int id);
+
     @Query("SELECT COUNT(*) FROM videos WHERE section_id = :sectionId")
     int getCountBySection(int sectionId);
 
-    /**
-     * يجلب كل التحميلات التي لم تكتمل بعد (لاستئنافها عند تشغيل التطبيق).
-     */
     @Query("SELECT * FROM videos WHERE download_status IN ('PENDING', 'DOWNLOADING', 'PAUSED')")
     List<Video> getIncompleteDownloads();
 
@@ -49,10 +44,13 @@ public interface VideoDao {
     @Query("UPDATE videos SET download_status = :status WHERE id = :id")
     void updateStatus(int id, DownloadStatus status);
 
+    @Query("UPDATE videos SET download_status = :status, error_message = :error WHERE id = :id")
+    void updateStatusWithError(int id, DownloadStatus status, String error);
+
     @Query("UPDATE videos SET progress = :progress, download_status = :status WHERE id = :id")
     void updateProgress(int id, int progress, DownloadStatus status);
 
-    @Query("UPDATE videos SET file_path = :filePath, size_bytes = :sizeBytes, duration_ms = :durationMs, download_status = :status, progress = 100 WHERE id = :id")
+    @Query("UPDATE videos SET file_path = :filePath, size_bytes = :sizeBytes, duration_ms = :durationMs, download_status = :status, progress = 100, error_message = NULL WHERE id = :id")
     void markCompleted(int id, String filePath, long sizeBytes, long durationMs, DownloadStatus status);
 
     @Query("UPDATE videos SET watch_position_ms = :positionMs WHERE id = :id")

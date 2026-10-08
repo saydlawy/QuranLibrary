@@ -16,16 +16,9 @@ import com.example.quranlibrary.data.db.AppDatabase;
 import com.example.quranlibrary.data.db.VideoDao;
 import com.example.quranlibrary.data.model.DownloadStatus;
 
-/**
- * خدمة UIDT لتحميل الفيديوهات في الخلفية.
- * - تُشغَّل عبر JobScheduler مع setUserInitiated(true).
- * - setNotification() تُستدعى هنا (متطلب UIDT) بعد بدء المهمة.
- * - تحفظ الحالة في Room لضمان الاستئناف.
- */
 public class DownloadJobService extends JobService {
 
     public static final String TAG = "DownloadJobService";
-
     public static final String EXTRA_VIDEO_ID = "extra_video_id";
     public static final String EXTRA_URL = "extra_url";
     public static final String EXTRA_OUTPUT_DIR = "extra_output_dir";
@@ -54,7 +47,6 @@ public class DownloadJobService extends JobService {
 
         createNotificationChannel();
 
-        // متطلب UIDT: تعيين الإشعار على المهمة بعد بدئها
         Notification notification = buildNotification(title, 0);
         if (Build.VERSION.SDK_INT >= 34) {
             setNotification(params, NOTIFICATION_ID, notification,
@@ -82,8 +74,9 @@ public class DownloadJobService extends JobService {
                                         DownloadStatus.COMPLETED);
                                 Log.d(TAG, "اكتمل التحميل: " + result.filePath);
                             } else {
-                                dao.updateStatus(videoId, DownloadStatus.FAILED);
-                                Log.e(TAG, "فشل التحميل: " + result.error);
+                                String err = result.error == null ? "unknown" : result.error;
+                                dao.updateStatusWithError(videoId, DownloadStatus.FAILED, err);
+                                Log.e(TAG, "فشل التحميل: " + err);
                             }
                         } catch (Exception e) {
                             Log.e(TAG, "خطأ في حفظ النتيجة", e);
@@ -95,7 +88,7 @@ public class DownloadJobService extends JobService {
 
                     @Override
                     public void onError(String errorMessage) {
-                        dao.updateStatus(videoId, DownloadStatus.FAILED);
+                        dao.updateStatusWithError(videoId, DownloadStatus.FAILED, errorMessage);
                         Log.e(TAG, "خطأ Python: " + errorMessage);
                         cancelNotification();
                         jobFinished(params, false);
@@ -107,7 +100,7 @@ public class DownloadJobService extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        Log.d(TAG, "onStopJob (سيُعاد الجدولة)");
+        Log.d(TAG, "onStopJob");
         jobCancelled = true;
         cancelNotification();
         return true;
@@ -116,10 +109,7 @@ public class DownloadJobService extends JobService {
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "تحميل الفيديوهات",
-                    NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("إشعارات تحميل الفيديوهات");
+                    CHANNEL_ID, "تحميل الفيديوهات", NotificationManager.IMPORTANCE_LOW);
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(channel);
         }

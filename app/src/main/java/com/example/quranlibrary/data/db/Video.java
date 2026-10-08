@@ -8,12 +8,6 @@ import androidx.room.PrimaryKey;
 
 import com.example.quranlibrary.data.model.DownloadStatus;
 
-/**
- * يمثل فيديو في المكتبة.
- * - مرتبط بقسم عبر sectionId (Foreign Key مع حذف تتابعي).
- * - يحمل حالة التحميل والتقدم لضمان الاستئناف بعد إعادة التشغيل.
- * - filePath و downloadId يستخدمان لتتبع الملف على القرص.
- */
 @Entity(
         tableName = "videos",
         foreignKeys = @ForeignKey(
@@ -59,6 +53,9 @@ public class Video {
     @ColumnInfo(name = "progress")
     public int progress;
 
+    @ColumnInfo(name = "error_message")
+    public String errorMessage;
+
     @ColumnInfo(name = "watch_position_ms")
     public long watchPositionMs;
 
@@ -68,9 +65,6 @@ public class Video {
     @ColumnInfo(name = "created_at")
     public long createdAt;
 
-    /**
-     * منشئ أساسي لتحميل جديد.
-     */
     public Video(int sectionId, String title, String youtubeUrl) {
         this.sectionId = sectionId;
         this.title = title;

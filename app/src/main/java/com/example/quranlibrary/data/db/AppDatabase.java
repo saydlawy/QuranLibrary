@@ -22,7 +22,7 @@ import java.util.concurrent.Executors;
  */
 @Database(
         entities = {Section.class, Video.class},
-        version = 2,
+        version = 3,
         exportSchema = false
 )
 @TypeConverters({Converters.class})
