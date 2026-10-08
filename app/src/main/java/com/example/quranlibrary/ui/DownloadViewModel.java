@@ -4,6 +4,7 @@ import android.app.Application;
 import android.os.Environment;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
@@ -85,7 +86,7 @@ public class DownloadViewModel extends AndroidViewModel {
             long newId = videoRepository.insert(video);
             int videoId = (int) newId;
 
-            getApplication().getMainExecutor().execute(() -> {
+            ContextCompat.getMainExecutor(getApplication()).execute(() -> {
                 observeVideo(videoId);
                 boolean scheduled = DownloadScheduler.schedule(
                         getApplication(),
