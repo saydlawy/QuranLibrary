@@ -16,7 +16,7 @@ import com.example.quranlibrary.data.model.DownloadStatus;
                 childColumns = "section_id",
                 onDelete = ForeignKey.CASCADE
         ),
-        indices = {@Index("section_id")}
+        indices = {@Index("section_id"), @Index("source_id")}
 )
 public class Video {
 
@@ -65,6 +65,36 @@ public class Video {
     @ColumnInfo(name = "created_at")
     public long createdAt;
 
+    @ColumnInfo(name = "source_id")
+    public String sourceId;
+
+    @ColumnInfo(name = "source_type")
+    public String sourceType;
+
+    @ColumnInfo(name = "channel_name")
+    public String channelName;
+
+    @ColumnInfo(name = "thumbnail_url")
+    public String thumbnailUrl;
+
+    @ColumnInfo(name = "published_at")
+    public Long publishedAt;
+
+    @ColumnInfo(name = "playlist_id")
+    public String playlistId;
+
+    @ColumnInfo(name = "playlist_position")
+    public Integer playlistPosition;
+
+    @ColumnInfo(name = "downloaded_at", defaultValue = "0")
+    public long downloadedAt;
+
+    @ColumnInfo(name = "sha256")
+    public String sha256;
+
+    @ColumnInfo(name = "metadata_status", defaultValue = "'PENDING'")
+    public String metadataStatus;
+
     public Video(int sectionId, String title, String youtubeUrl) {
         this.sectionId = sectionId;
         this.title = title;
@@ -72,5 +102,7 @@ public class Video {
         this.downloadStatus = DownloadStatus.PENDING;
         this.progress = 0;
         this.createdAt = System.currentTimeMillis();
+        this.downloadedAt = 0L;
+        this.metadataStatus = "PENDING";
     }
 }

@@ -1,0 +1,88 @@
+package com.example.quranlibrary.data.db;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
+
+import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
+
+import androidx.room.Room;
+
+import androidx.test.core.app.ApplicationProvider;
+
+import com.example.quranlibrary.data.model.DownloadStatus;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+
+@RunWith(RobolectricTestRunner.class)
+public class AppDatabaseMigrationTest {
+
+    @Test
+    public void migrationFromVersion3PreservesVideoAndAddsMetadataDefaults() {
+        Context context = ApplicationProvider.getApplicationContext();
+        String name = "migration-v3-test.db";
+        context.deleteDatabase(name);
+
+        SQLiteDatabase legacy = context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null);
+        legacy.execSQL("CREATE TABLE IF NOT EXISTS room_master_table "
+                + "(id INTEGER PRIMARY KEY, identity_hash TEXT)");
+        legacy.execSQL("INSERT OR REPLACE INTO room_master_table (id, identity_hash) "
+                + "VALUES (42, 'legacy-v3-hash')");
+        legacy.execSQL("CREATE TABLE sections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
+                + "name TEXT, icon_key TEXT, sort_order INTEGER NOT NULL, "
+                + "is_default INTEGER NOT NULL, created_at INTEGER NOT NULL)");
+        legacy.execSQL("CREATE TABLE videos (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
+                + "section_id INTEGER NOT NULL, title TEXT, youtube_url TEXT, file_path TEXT, "
+                + "thumbnail_path TEXT, duration_ms INTEGER NOT NULL, size_bytes INTEGER NOT NULL, "
+                + "quality TEXT, download_status TEXT, progress INTEGER NOT NULL, error_message TEXT, "
+                + "watch_position_ms INTEGER NOT NULL, is_favorite INTEGER NOT NULL, "
+                + "created_at INTEGER NOT NULL, FOREIGN KEY(section_id) REFERENCES sections(id) "
+                + "ON UPDATE NO ACTION ON DELETE CASCADE)");
+        legacy.execSQL("CREATE INDEX index_videos_section_id ON videos(section_id)");
+        legacy.execSQL("INSERT INTO sections (id, name, icon_key, sort_order, is_default, created_at) "
+                + "VALUES (1, 'القرآن الكريم', 'quran', 1, 1, 100)");
+        legacy.execSQL("INSERT INTO videos (id, section_id, title, youtube_url, file_path, "
+                + "thumbnail_path, duration_ms, size_bytes, quality, download_status, progress, "
+                + "error_message, watch_position_ms, is_favorite, created_at) VALUES "
+                + "(7, 1, 'اختبار محفوظ', 'https://example.com/video', '/videos/test.mp4', "
+                + "NULL, 12345, 678, '720', 'COMPLETED', 100, NULL, 4500, 1, 200)");
+        legacy.setVersion(3);
+        legacy.close();
+
+        AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, name)
+                .addMigrations(AppDatabase.MIGRATION_3_4)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            Video video = migrated.videoDao().getVideoById(7);
+            assertNotNull("The pre-existing video row must survive migration", video);
+            assertEquals("اختبار محفوظ", video.title);
+            assertEquals("https://example.com/video", video.youtubeUrl);
+            assertEquals("/videos/test.mp4", video.filePath);
+            assertEquals(DownloadStatus.COMPLETED, video.downloadStatus);
+            assertEquals(4500L, video.watchPositionMs);
+            assertEquals(678L, video.sizeBytes);
+            assertNull(video.sourceId);
+            assertNull(video.thumbnailUrl);
+            assertNull(video.playlistId);
+            assertEquals(0L, video.downloadedAt);
+            assertEquals("PENDING", video.metadataStatus);
+        } finally {
+            migrated.close();
+            context.deleteDatabase(name);
+        }
+    }
+
+    @Test
+    public void newVideoStartsWithExplicitPendingMetadataState() {
+        Video video = new Video(1, "عنوان تجريبي", "https://example.com/watch?v=abc");
+        assertEquals(DownloadStatus.PENDING, video.downloadStatus);
+        assertEquals("PENDING", video.metadataStatus);
+        assertEquals(0L, video.downloadedAt);
+        assertNull(video.sourceId);
+        assertNull(video.channelName);
+    }
+}
