@@ -95,10 +95,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onStop() {
-        if (player != null) {
-            player.pause();
-            savePosition();
-        }
+        // Keep playback running when the activity moves to the background.
+        // Persist the current position without pausing the player.
+        savePosition();
         super.onStop();
     }
 
