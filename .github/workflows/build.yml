@@ -45,6 +45,12 @@ jobs:
           python --version
           ./gradlew --version
 
+      - name: Unit test task
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Android Lint
+        run: ./gradlew lintDebug --stacktrace
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
