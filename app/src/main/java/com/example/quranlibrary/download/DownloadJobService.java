@@ -198,6 +198,8 @@ public class DownloadJobService extends JobService {
         request.addOption("--trim-filenames", "150");
         request.addOption("--newline");
         request.addOption("--no-warnings");
+        // YouTube currently has SABR/403 cases on some clients; Android client returns direct CDN URLs.
+        request.addOption("--extractor-args", "youtube:player_client=android");
 
         if ("video".equalsIgnoreCase(mode) || "auto".equalsIgnoreCase(mode)) {
             request.addOption("--no-playlist");
