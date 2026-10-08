@@ -53,11 +53,12 @@ public class MainActivity extends AppCompatActivity {
         RecyclerView recyclerView = findViewById(R.id.sectionsRecyclerView);
         FloatingActionButton fab = findViewById(R.id.addSectionFab);
 
-        adapter = new SectionsAdapter(section ->
-                Intent intent = new Intent(this, SectionVideosActivity.class);
-                intent.putExtra(SectionVideosActivity.EXTRA_SECTION_ID, section.id);
-                intent.putExtra(SectionVideosActivity.EXTRA_SECTION_NAME, section.name);
-                startActivity(intent));
+        adapter = new SectionsAdapter(section -> {
+            Intent intent = new Intent(this, SectionVideosActivity.class);
+            intent.putExtra(SectionVideosActivity.EXTRA_SECTION_ID, section.id);
+            intent.putExtra(SectionVideosActivity.EXTRA_SECTION_NAME, section.name);
+            startActivity(intent);
+        });
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(adapter);
 
