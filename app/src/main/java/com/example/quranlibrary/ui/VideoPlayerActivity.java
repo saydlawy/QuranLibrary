@@ -94,6 +94,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onStop() {
+        if (player != null) {
+            player.pause();
+            savePosition();
+        }
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
         savePosition();
         if (player != null) {
