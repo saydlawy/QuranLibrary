@@ -6,14 +6,16 @@ import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
 
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+/**
+ * واجهة Java رفيعة حول downloader.py.
+ * يجب استدعاؤها من خيط خلفي (JobService/Executor)، وليس من الخيط الرئيسي.
+ */
+public final class PythonBridge {
 
-public class PythonBridge {
-
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static volatile boolean initialized = false;
+    private static PyObject module;
+
+    private PythonBridge() {}
 
     public static synchronized void init(Context context) {
         if (!initialized) {
@@ -22,72 +24,54 @@ public class PythonBridge {
             }
             initialized = true;
         }
+        if (module == null) {
+            module = Python.getInstance().getModule("downloader");
+        }
     }
 
-    public interface DownloadResultCallback {
-        void onComplete(DownloadResult result);
-        void onError(String message);
+    /**
+     * جلب معلومات (بدون تحميل) كسلسلة JSON.
+     * البنية: {ok, kind, title, count, entries[]} أو {ok:false, error}
+     */
+    public static String getInfo(String url, String mode) {
+        if (module == null) return "{\"ok\":false,\"error\":\"Python not initialized\"}";
+        return module.callAttr("get_info", url, mode).toString();
     }
 
-    public static class DownloadResult {
-        public boolean success;
-        public String filePath;
-        public String title;
-        public long durationMs;
-        public long sizeBytes;
-        public String error;
+    /**
+     * تحميل فيديو واحد أو قائمة تشغيل.
+     *
+     * @param quality 0 = أفضل جودة، 1080/720/480/360 = حد أقصى للارتفاع، -1 = صوت فقط.
+     * @param mode    "auto" أو "video" أو "playlist".
+     * @param cb      كائن DownloadCallback (قد يكون null).
+     * @return سلسلة JSON تحتوي النتيجة (ok, cancelled, kind, folder, downloaded[], failed[], warnings[], error).
+     */
+    public static String download(String url,
+                                  String outDir,
+                                  String ffmpegPath,
+                                  int quality,
+                                  String mode,
+                                  DownloadCallback cb) {
+        if (module == null) return "{\"ok\":false,\"error\":\"Python not initialized\"}";
+        return module.callAttr("download",
+                url,
+                outDir,
+                ffmpegPath == null ? "" : ffmpegPath,
+                quality,
+                mode,
+                cb
+        ).toString();
     }
 
-    public static void download(String url,
-                                String outputDir,
-                                String ffmpegPath,
-                                DownloadProgressCallback progressCallback,
-                                DownloadResultCallback resultCallback) {
-        EXECUTOR.execute(() -> {
+    /**
+     * إلغاء التحميل الحالي.
+     */
+    public static void cancel() {
+        if (module != null) {
             try {
-                Python py = Python.getInstance();
-                PyObject module = py.getModule("downloader");
-                PyObject result = module.callAttr("download",
-                        url, outputDir, ffmpegPath, progressCallback);
-
-                DownloadResult dr = parseResult(result);
-                if (resultCallback != null) resultCallback.onComplete(dr);
-            } catch (Exception e) {
-                if (resultCallback != null) {
-                    String msg = e.getMessage() == null ? "unknown error" : e.getMessage();
-                    resultCallback.onError(msg);
-                }
-            }
-        });
-    }
-
-    private static DownloadResult parseResult(PyObject result) {
-        DownloadResult dr = new DownloadResult();
-        Map<PyObject, PyObject> map = result.asMap();
-        for (Map.Entry<PyObject, PyObject> entry : map.entrySet()) {
-            String key = entry.getKey().toString();
-            PyObject value = entry.getValue();
-            switch (key) {
-                case "success":
-                    dr.success = value.toJava(Boolean.class);
-                    break;
-                case "file_path":
-                    dr.filePath = value.toString();
-                    break;
-                case "title":
-                    dr.title = value.toString();
-                    break;
-                case "duration_ms":
-                    dr.durationMs = value.toLong();
-                    break;
-                case "size_bytes":
-                    dr.sizeBytes = value.toLong();
-                    break;
-                case "error":
-                    dr.error = value.toString();
-                    break;
+                module.callAttr("cancel");
+            } catch (Exception ignored) {
             }
         }
-        return dr;
     }
 }

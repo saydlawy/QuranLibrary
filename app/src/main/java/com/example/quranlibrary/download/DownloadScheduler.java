@@ -12,24 +12,29 @@ import androidx.annotation.RequiresPermission;
 
 /**
  * مساعد جدولة مهمة UIDT للتحميل.
- * ملاحظة: setNotification() تُستدعى داخل onStartJob() وليس هنا.
  */
 public class DownloadScheduler {
 
     private static final String TAG = "DownloadScheduler";
 
     @RequiresPermission(android.Manifest.permission.RUN_USER_INITIATED_JOBS)
-    public static void schedule(Context context,
-                                int videoId,
-                                String url,
-                                String outputDir,
-                                String title) {
+    public static boolean schedule(Context context,
+                                   int videoId,
+                                   int sectionId,
+                                   String url,
+                                   String outputDir,
+                                   String title,
+                                   int quality,
+                                   String mode) {
 
         PersistableBundle extras = new PersistableBundle();
         extras.putInt(DownloadJobService.EXTRA_VIDEO_ID, videoId);
+        extras.putInt(DownloadJobService.EXTRA_SECTION_ID, sectionId);
         extras.putString(DownloadJobService.EXTRA_URL, url);
         extras.putString(DownloadJobService.EXTRA_OUTPUT_DIR, outputDir);
         extras.putString(DownloadJobService.EXTRA_TITLE, title);
+        extras.putInt(DownloadJobService.EXTRA_QUALITY, quality);
+        extras.putString(DownloadJobService.EXTRA_MODE, mode);
 
         ComponentName component = new ComponentName(context, DownloadJobService.class);
 
@@ -38,26 +43,27 @@ public class DownloadScheduler {
                 .setPersisted(true)
                 .setExtras(extras);
 
-        // setUserInitiated متاح من API 34
         if (Build.VERSION.SDK_INT >= 34) {
             builder.setUserInitiated(true);
         }
 
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (scheduler != null) {
-            int result = scheduler.schedule(builder.build());
-            if (result == JobScheduler.RESULT_SUCCESS) {
-                Log.d(TAG, "تم جدولة المهمة: " + videoId);
-            } else {
-                Log.e(TAG, "فشل جدولة المهمة: " + videoId);
-            }
+        if (scheduler == null) {
+            Log.e(TAG, "JobScheduler غير متوفر");
+            return false;
         }
+        int result = scheduler.schedule(builder.build());
+        boolean ok = result == JobScheduler.RESULT_SUCCESS;
+        if (ok) {
+            Log.d(TAG, "تم جدولة المهمة: " + videoId);
+        } else {
+            Log.e(TAG, "فشل جدولة المهمة: " + videoId);
+        }
+        return ok;
     }
 
     public static void cancel(Context context, int jobId) {
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (scheduler != null) {
-            scheduler.cancel(jobId);
-        }
+        if (scheduler != null) scheduler.cancel(jobId);
     }
 }

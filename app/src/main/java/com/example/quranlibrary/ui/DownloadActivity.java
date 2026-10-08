@@ -15,13 +15,11 @@ import androidx.lifecycle.ViewModelProvider;
 import com.example.quranlibrary.R;
 import com.example.quranlibrary.data.db.Section;
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * شاشة بدء تحميل فيديو جديد.
- */
 public class DownloadActivity extends AppCompatActivity {
 
     private DownloadViewModel viewModel;
@@ -74,7 +72,17 @@ public class DownloadActivity extends AppCompatActivity {
         });
 
         viewModel.getStatusMessage().observe(this, msg -> {
-            if (msg != null) Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+            if (msg == null) return;
+            // عرض الرسائل الطويلة (أخطاء) في AlertDialog، والقصيرة في Toast
+            if (msg.length() > 60 || msg.startsWith("فشل")) {
+                new MaterialAlertDialogBuilder(this)
+                        .setTitle("تفاصيل")
+                        .setMessage(msg)
+                        .setPositiveButton("حسنًا", null)
+                        .show();
+            } else {
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+            }
         });
 
         downloadButton.setOnClickListener(v -> {
@@ -86,7 +94,8 @@ public class DownloadActivity extends AppCompatActivity {
                 return;
             }
             Section section = sectionsList.get(pos);
-            viewModel.startDownload(url, section, title);
+            // القيم الافتراضية: أفضل جودة، وضع تلقائي
+            viewModel.startDownload(url, section, title, 0, "auto");
         });
     }
 }

@@ -59,7 +59,8 @@ public class DownloadViewModel extends AndroidViewModel {
         return isDownloading;
     }
 
-    public void startDownload(String url, Section section, String title) {
+    public void startDownload(String url, Section section, String title,
+                              int quality, String mode) {
         if (url == null || url.trim().isEmpty()) {
             statusMessage.setValue("الرجاء إدخال رابط الفيديو");
             return;
@@ -86,16 +87,21 @@ public class DownloadViewModel extends AndroidViewModel {
 
             getApplication().getMainExecutor().execute(() -> {
                 observeVideo(videoId);
-                try {
-                    DownloadScheduler.schedule(
-                            getApplication(), videoId, cleanUrl,
-                            outputDir.getAbsolutePath(), cleanTitle);
+                boolean scheduled = DownloadScheduler.schedule(
+                        getApplication(),
+                        videoId,
+                        section.id,
+                        cleanUrl,
+                        outputDir.getAbsolutePath(),
+                        cleanTitle,
+                        quality,
+                        mode);
+                if (scheduled) {
                     isDownloading.setValue(true);
-                    String ffPath = com.example.quranlibrary.download.FFmpegHelper.getFFmpegPath(getApplication());
-                    statusMessage.setValue("بدأ التحميل. FFmpeg=" + (ffPath.isEmpty() ? "غير موجود" : ffPath));
-                } catch (Exception e) {
+                    statusMessage.setValue("بدأ التحميل في الخلفية");
+                } else {
                     isDownloading.setValue(false);
-                    statusMessage.setValue("فشل بدء التحميل: " + e.getMessage());
+                    statusMessage.setValue("فشل جدولة التحميل");
                 }
             });
         }).start();
