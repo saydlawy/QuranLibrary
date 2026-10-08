@@ -13,26 +13,19 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 
 import com.example.quranlibrary.data.db.AppDatabase;
-import com.example.quranlibrary.data.db.Video;
 import com.example.quranlibrary.data.db.VideoDao;
 import com.example.quranlibrary.data.model.DownloadStatus;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
+import com.yausername.ffmpeg.FFmpeg;
+import com.yausername.youtubedl_android.YoutubeDL;
+import com.yausername.youtubedl_android.YoutubeDLRequest;
+import com.yausername.youtubedl_android.YoutubeDLResponse;
 
 import java.io.File;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * خدمة UIDT لتحميل الفيديوهات في الخلفية.
- * - تستخدم DownloadCallback الجديدة لاستقبال أحداث Python.
- * - تحفظ حالة كل عنصر في Room.
- * - تعرض تقدمًا حقيقيًا في الإشعار.
- */
 public class DownloadJobService extends JobService {
 
     public static final String TAG = "DownloadJobService";
-
     public static final String EXTRA_VIDEO_ID = "extra_video_id";
     public static final String EXTRA_URL = "extra_url";
     public static final String EXTRA_OUTPUT_DIR = "extra_output_dir";
@@ -45,10 +38,11 @@ public class DownloadJobService extends JobService {
     private static final int NOTIFICATION_ID = 1001;
 
     private volatile boolean jobCancelled = false;
+    private volatile String processId;
 
     @Override
     public boolean onStartJob(JobParameters params) {
-        Log.d(TAG, "onStartJob: " + params.getJobId());
+        jobCancelled = false;
 
         PersistableBundle extras = params.getExtras();
         int videoId = extras.getInt(EXTRA_VIDEO_ID, -1);
@@ -59,119 +53,187 @@ public class DownloadJobService extends JobService {
         int quality = extras.getInt(EXTRA_QUALITY, 0);
         String mode = extras.getString(EXTRA_MODE, "auto");
 
-        if (videoId <= 0 || url == null || outputDir == null || sectionId <= 0) {
-            Log.e(TAG, "بيانات ناقصة");
+        if (videoId <= 0 || sectionId <= 0 || url == null || outputDir == null) {
+            Log.e(TAG, "بيانات التحميل ناقصة");
+            jobFinished(params, false);
+            return false;
+        }
+
+        if ("playlist".equalsIgnoreCase(mode)) {
+            Log.e(TAG, "وضع playlist مؤجل إلى M6؛ M2 يثبت محرك الفيديو المفرد فقط");
+            VideoDao dao = AppDatabase.getInstance(this).videoDao();
+            dao.updateStatusWithError(videoId, DownloadStatus.FAILED,
+                    "وضع playlist سيُفعل في M6");
             jobFinished(params, false);
             return false;
         }
 
         createNotificationChannel();
-
         if (Build.VERSION.SDK_INT >= 34) {
             setNotification(params, NOTIFICATION_ID,
-                    buildNotification(title, 0, "جاري التحضير"),
+                    buildNotification(title, 0, "جاري تهيئة محرك التنزيل"),
                     JobService.JOB_END_NOTIFICATION_POLICY_REMOVE);
         }
 
         VideoDao dao = AppDatabase.getInstance(this).videoDao();
-        String ffmpegPath = FFmpegHelper.getFFmpegPath(this);
-        Log.d(TAG, "FFmpeg path: " + ffmpegPath);
-
-        // حالة التقدم لكل عنصر (لمنع ضغط كبير على DB/Notification)
         final AtomicInteger lastPercent = new AtomicInteger(-1);
-
-        DownloadCallback cb = new DownloadCallback() {
-            @Override
-            public void onProgress(int percent, String speed, String eta,
-                                   String itemTitle, int index, int total) {
-                if (jobCancelled) return;
-
-                String prefix = total > 1 ? "[" + index + "/" + total + "] " : "";
-                updateNotification(title, percent, prefix + (speed.isEmpty() ? "" : speed));
-
-                // تحديث DB كل 5% أو عند اكتمال
-                int current = lastPercent.get();
-                if (percent >= 0 && (percent - current >= 5 || percent == 100)) {
-                    if (lastPercent.compareAndSet(current, percent)) {
-                        dao.updateProgress(videoId, percent, DownloadStatus.DOWNLOADING);
-                    }
-                }
-            }
-
-            @Override
-            public void onItemFinished(int index, int total, String itemTitle, String path) {
-                Log.d(TAG, "onItemFinished: " + itemTitle + " -> " + path);
-            }
-
-            @Override
-            public void onItemFailed(int index, int total, String itemTitle, String error) {
-                Log.e(TAG, "onItemFailed [" + index + "/" + total + "] " + itemTitle + ": " + error);
-            }
-        };
+        processId = "video-" + videoId;
 
         new Thread(() -> {
             try {
-                String resultJson = PythonBridge.download(
-                        url, outputDir, ffmpegPath, quality, mode, cb);
-                handleResult(dao, videoId, sectionId, title, resultJson);
+                initEngine();
+
+                YoutubeDLRequest request = buildRequest(
+                        url, outputDir, quality, mode);
+
+                dao.updateProgress(videoId, 0, DownloadStatus.DOWNLOADING);
+
+                final String currentProcessId = processId;
+                YoutubeDLResponse response = YoutubeDL.getInstance().execute(
+                        request,
+                        currentProcessId,
+                        (progress, eta, line) -> {
+                            if (jobCancelled) return kotlin.Unit.INSTANCE;
+
+                            int percent = Math.max(0, Math.min(100, Math.round(progress)));
+                            int current = lastPercent.get();
+                            if (percent == 100 || current < 0 || percent - current >= 5) {
+                                if (lastPercent.compareAndSet(current, percent)) {
+                                    dao.updateProgress(
+                                            videoId, percent, DownloadStatus.DOWNLOADING);
+                                }
+                            }
+
+                            updateNotification(
+                                    title,
+                                    percent,
+                                    eta > 0 ? "متبقي " + eta + " ثانية" : "جاري التنزيل");
+                            return kotlin.Unit.INSTANCE;
+                        });
+
+                if (jobCancelled) {
+                    dao.updateStatusWithError(
+                            videoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
+                    return;
+                }
+
+                if (response.exitCode != 0) {
+                    String error = response.err == null || response.err.trim().isEmpty()
+                            ? "yt-dlp exit code " + response.exitCode
+                            : response.err.trim();
+                    dao.updateStatusWithError(videoId, DownloadStatus.FAILED, error);
+                    return;
+                }
+
+                String finalPath = findPrintedPath(response.out, outputDir);
+                if (finalPath.isEmpty()) {
+                    dao.updateStatusWithError(
+                            videoId, DownloadStatus.FAILED,
+                            "اكتمل yt-dlp لكن لم يتم العثور على المسار النهائي");
+                    return;
+                }
+
+                File output = new File(finalPath);
+                if (!output.isFile() || output.length() <= 0) {
+                    dao.updateStatusWithError(
+                            videoId, DownloadStatus.FAILED,
+                            "المسار النهائي غير صالح: " + finalPath);
+                    return;
+                }
+
+                dao.markCompleted(
+                        videoId,
+                        finalPath,
+                        output.length(),
+                        0,
+                        DownloadStatus.COMPLETED);
+                Log.d(TAG, "اكتمل التحميل: " + finalPath);
+                updateNotification(title, 100, "اكتمل التحميل");
+            } catch (YoutubeDL.CanceledException e) {
+                dao.updateStatusWithError(
+                        videoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
             } catch (Exception e) {
-                Log.e(TAG, "استثناء من PythonBridge", e);
-                dao.updateStatusWithError(videoId, DownloadStatus.FAILED, e.getMessage());
+                Log.e(TAG, "فشل محرك yt-dlp", e);
+                dao.updateStatusWithError(
+                        videoId, DownloadStatus.FAILED,
+                        e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             } finally {
+                processId = null;
                 cancelNotification();
                 jobFinished(params, false);
             }
-        }).start();
+        }, "ytdlp-" + videoId).start();
 
         return true;
     }
 
-    private void handleResult(VideoDao dao, int videoId, int sectionId,
-                              String title, String resultJson) {
-        try {
-            JSONObject root = new JSONObject(resultJson);
-            boolean ok = root.optBoolean("ok", false);
-            boolean cancelled = root.optBoolean("cancelled", false);
+    private void initEngine() throws Exception {
+        YoutubeDL.getInstance().init(getApplicationContext());
+        FFmpeg.getInstance().init(getApplicationContext());
+    }
 
-            if (cancelled) {
-                dao.updateStatusWithError(videoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
-                return;
-            }
+    private YoutubeDLRequest buildRequest(
+            String url, String outputDir, int quality, String mode) {
+        YoutubeDLRequest request = new YoutubeDLRequest(url);
 
-            if (ok) {
-                JSONArray downloaded = root.optJSONArray("downloaded");
-                String firstPath = "";
-                long totalSize = 0;
-                if (downloaded != null && downloaded.length() > 0) {
-                    firstPath = downloaded.optString(0, "");
-                    File f = new File(firstPath);
-                    if (f.exists()) totalSize = f.length();
-                }
-                dao.markCompleted(videoId, firstPath, totalSize, 0,
-                        DownloadStatus.COMPLETED);
-                Log.d(TAG, "اكتمل التحميل: " + firstPath);
-            } else {
-                String err = root.optString("error", "خطأ غير معروف");
-                JSONArray failed = root.optJSONArray("failed");
-                if (failed != null && failed.length() > 0) {
-                    JSONObject first = failed.optJSONObject(0);
-                    if (first != null) err = first.optString("error", err);
-                }
-                dao.updateStatusWithError(videoId, DownloadStatus.FAILED, err);
-                Log.e(TAG, "فشل التحميل: " + err);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "خطأ في تفسير نتيجة JSON", e);
-            dao.updateStatusWithError(videoId, DownloadStatus.FAILED,
-                    "خطأ في تفسير النتيجة: " + e.getMessage());
+        String height = quality > 0 ? "[height<=" + quality + "]" : "";
+        String format = "bv*" + height + "+ba/b" + height + "/b";
+        if (quality == -1) {
+            request.addOption("-f", "bestaudio[ext=m4a]/bestaudio/best");
+            request.addOption("-x");
+            request.addOption("--audio-format", "m4a");
+        } else {
+            request.addOption("-f", format);
+            request.addOption("--merge-output-format", "mp4");
         }
+
+        request.addOption("-o", new File(outputDir, "%(title)s.%(ext)s").getAbsolutePath());
+        request.addOption("--print", "after_move:filepath");
+        request.addOption("--no-mtime");
+        request.addOption("--retries", "5");
+        request.addOption("--fragment-retries", "10");
+        request.addOption("--socket-timeout", "30");
+        request.addOption("--continue");
+        request.addOption("--no-overwrites");
+        request.addOption("--trim-filenames", "150");
+        request.addOption("--newline");
+        request.addOption("--no-warnings");
+
+        if ("video".equalsIgnoreCase(mode) || "auto".equalsIgnoreCase(mode)) {
+            request.addOption("--no-playlist");
+        }
+
+        return request;
+    }
+
+    private String findPrintedPath(String output, String outputDir) {
+        if (output == null || output.trim().isEmpty()) return "";
+
+        String[] lines = output.split("\\R");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String candidate = lines[i].trim();
+            if (candidate.isEmpty()) continue;
+
+            File file = new File(candidate);
+            if (file.isFile()) return file.getAbsolutePath();
+
+            File inOutput = new File(outputDir, candidate);
+            if (inOutput.isFile()) return inOutput.getAbsolutePath();
+        }
+        return "";
     }
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        Log.d(TAG, "onStopJob");
         jobCancelled = true;
-        PythonBridge.cancel();
+        String id = processId;
+        if (id != null) {
+            try {
+                YoutubeDL.getInstance().destroyProcessById(id);
+            } catch (Exception e) {
+                Log.w(TAG, "تعذر إلغاء عملية yt-dlp", e);
+            }
+        }
         cancelNotification();
         return true;
     }
@@ -186,27 +248,33 @@ public class DownloadJobService extends JobService {
     }
 
     private Notification buildNotification(String title, int percent, String status) {
-        NotificationCompat.Builder b = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("جاري تحميل: " + title)
-                .setContentText(status == null || status.isEmpty() ? (percent + "%") : status)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setOngoing(true)
-                .setOnlyAlertOnce(true);
+        NotificationCompat.Builder builder =
+                new NotificationCompat.Builder(this, CHANNEL_ID)
+                        .setContentTitle("جاري تحميل: " + title)
+                        .setContentText(status == null || status.isEmpty()
+                                ? percent + "%" : status)
+                        .setSmallIcon(android.R.drawable.stat_sys_download)
+                        .setOngoing(true)
+                        .setOnlyAlertOnce(true);
         if (percent >= 0) {
-            b.setProgress(100, percent, false);
+            builder.setProgress(100, percent, false);
         } else {
-            b.setProgress(0, 0, true);
+            builder.setProgress(0, 0, true);
         }
-        return b.build();
+        return builder.build();
     }
 
     private void updateNotification(String title, int percent, String status) {
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification(title, percent, status));
+        NotificationManager nm =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) {
+            nm.notify(NOTIFICATION_ID, buildNotification(title, percent, status));
+        }
     }
 
     private void cancelNotification() {
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager nm =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(NOTIFICATION_ID);
     }
 }
