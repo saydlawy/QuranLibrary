@@ -24,6 +24,10 @@
         </activity>
 
         <activity
+            android:name=".ui.SectionVideosActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.DownloadActivity"
             android:exported="false"
             android:label="@string/download_video" />
