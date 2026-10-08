@@ -8,8 +8,7 @@
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/playerToolbar"
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        app:navigationIcon="@drawable/ic_arrow_back" />
+        android:layout_height="?attr/actionBarSize" />
 
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
