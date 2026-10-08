@@ -117,15 +117,15 @@ public class DownloadJobService extends JobService {
                     return;
                 }
 
-                if (response.exitCode != 0) {
-                    String error = response.err == null || response.err.trim().isEmpty()
-                            ? "yt-dlp exit code " + response.exitCode
-                            : response.err.trim();
+                if (response.getExitCode() != 0) {
+                    String error = response.getErr() == null || response.getErr().trim().isEmpty()
+                            ? "yt-dlp exit code " + response.getExitCode()
+                            : response.getErr().trim();
                     dao.updateStatusWithError(videoId, DownloadStatus.FAILED, error);
                     return;
                 }
 
-                String finalPath = findPrintedPath(response.out, outputDir);
+                String finalPath = findPrintedPath(response.getOut(), outputDir);
                 if (finalPath.isEmpty()) {
                     dao.updateStatusWithError(
                             videoId, DownloadStatus.FAILED,
