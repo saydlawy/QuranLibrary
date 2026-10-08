@@ -38,8 +38,15 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Verify baseline environment
+        run: |
+          echo "CI_COMMIT=$(git rev-parse HEAD)"
+          java -version
+          python --version
+          ./gradlew --version
+
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Publish to Release
         env:
