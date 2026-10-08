@@ -13,6 +13,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.quranlibrary.R;
 import com.example.quranlibrary.data.db.Video;
 
+import java.util.Objects;
+
 public class VideoAdapter extends ListAdapter<Video, VideoAdapter.VideoViewHolder> {
 
     public VideoAdapter() {
@@ -30,7 +32,7 @@ public class VideoAdapter extends ListAdapter<Video, VideoAdapter.VideoViewHolde
                 public boolean areContentsTheSame(@NonNull Video oldItem, @NonNull Video newItem) {
                     return oldItem.id == newItem.id
                             && oldItem.title.equals(newItem.title)
-                            && oldItem.downloadStatus == newItem.downloadStatus
+                            && Objects.equals(oldItem.downloadStatus, newItem.downloadStatus)
                             && oldItem.progress == newItem.progress
                             && equalsNullable(oldItem.filePath, newItem.filePath)
                             && equalsNullable(oldItem.errorMessage, newItem.errorMessage);
