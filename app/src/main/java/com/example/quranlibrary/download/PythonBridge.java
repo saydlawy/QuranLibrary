@@ -97,10 +97,10 @@ public class PythonBridge {
                     dr.title = value.toString();
                     break;
                 case "duration_ms":
-                    dr.durationMs = value.asLong();
+                    dr.durationMs = value.toLong();
                     break;
                 case "size_bytes":
-                    dr.sizeBytes = value.asLong();
+                    dr.sizeBytes = value.toLong();
                     break;
                 case "error":
                     dr.error = value.toString();

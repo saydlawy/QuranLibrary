@@ -12,19 +12,14 @@ import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
-import com.example.quranlibrary.R;
 import com.example.quranlibrary.data.db.AppDatabase;
-import com.example.quranlibrary.data.db.Video;
 import com.example.quranlibrary.data.db.VideoDao;
 import com.example.quranlibrary.data.model.DownloadStatus;
-
-import java.io.File;
 
 /**
  * خدمة UIDT لتحميل الفيديوهات في الخلفية.
  * - تُشغَّل عبر JobScheduler مع setUserInitiated(true).
- * - تبقى في الخلفية حتى انتهاء التحميل.
- * - تُظهر إشعارًا دائمًا بالتقدم.
+ * - setNotification() تُستدعى هنا (متطلب UIDT) بعد بدء المهمة.
  * - تحفظ الحالة في Room لضمان الاستئناف.
  */
 public class DownloadJobService extends JobService {
@@ -58,14 +53,20 @@ public class DownloadJobService extends JobService {
         }
 
         createNotificationChannel();
+
+        // متطلب UIDT: تعيين الإشعار على المهمة بعد بدئها
+        Notification notification = buildNotification(title, 0);
+        if (Build.VERSION.SDK_INT >= 34) {
+            setNotification(params, NOTIFICATION_ID, notification,
+                    JobService.JOB_END_NOTIFICATION_POLICY_REMOVE);
+        }
+
         VideoDao dao = AppDatabase.getInstance(this).videoDao();
 
         PythonBridge.download(url, outputDir,
                 (percent, status, message) -> {
                     if (jobCancelled) return;
-                    // تحديث الإشعار
                     updateNotification(title, percent);
-                    // تحديث قاعدة البيانات
                     DownloadStatus dbStatus = "error".equals(status)
                             ? DownloadStatus.FAILED
                             : DownloadStatus.DOWNLOADING;
@@ -101,7 +102,7 @@ public class DownloadJobService extends JobService {
                     }
                 });
 
-        return true; // المهمة ما زالت قيد التنفيذ
+        return true;
     }
 
     @Override
@@ -109,7 +110,6 @@ public class DownloadJobService extends JobService {
         Log.d(TAG, "onStopJob (سيُعاد الجدولة)");
         jobCancelled = true;
         cancelNotification();
-        // إرجاع true لإعادة جدولة المهمة عند توفر الشروط
         return true;
     }
 
@@ -125,8 +125,8 @@ public class DownloadJobService extends JobService {
         }
     }
 
-    private void updateNotification(String title, int percent) {
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+    private Notification buildNotification(String title, int percent) {
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("جاري تحميل: " + title)
                 .setContentText(percent + "%")
                 .setSmallIcon(android.R.drawable.stat_sys_download)
@@ -134,8 +134,11 @@ public class DownloadJobService extends JobService {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build();
+    }
+
+    private void updateNotification(String title, int percent) {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIFICATION_ID, notification);
+        if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification(title, percent));
     }
 
     private void cancelNotification() {

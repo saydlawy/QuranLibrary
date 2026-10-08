@@ -1,8 +1,5 @@
 package com.example.quranlibrary.download;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
 import android.content.ComponentName;
@@ -15,13 +12,11 @@ import androidx.annotation.RequiresPermission;
 
 /**
  * مساعد جدولة مهمة UIDT للتحميل.
- * - يستخدم setUserInitiated(true) على API 34+.
- * - ينشئ قناة إشعار قبل استخدام الإشعار.
+ * ملاحظة: setNotification() تُستدعى داخل onStartJob() وليس هنا.
  */
 public class DownloadScheduler {
 
     private static final String TAG = "DownloadScheduler";
-    private static final String CHANNEL_ID = "download_channel";
 
     @RequiresPermission(android.Manifest.permission.RUN_USER_INITIATED_JOBS)
     public static void schedule(Context context,
@@ -29,8 +24,6 @@ public class DownloadScheduler {
                                 String url,
                                 String outputDir,
                                 String title) {
-
-        ensureChannel(context);
 
         PersistableBundle extras = new PersistableBundle();
         extras.putInt(DownloadJobService.EXTRA_VIDEO_ID, videoId);
@@ -50,16 +43,6 @@ public class DownloadScheduler {
             builder.setUserInitiated(true);
         }
 
-        // setNotification متاح من API 26 (مع NotificationChannel)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification notification = new Notification.Builder(context, CHANNEL_ID)
-                    .setContentTitle("تحميل الفيديو")
-                    .setContentText(title)
-                    .setSmallIcon(android.R.drawable.stat_sys_download)
-                    .build();
-            builder.setNotification(notification);
-        }
-
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (scheduler != null) {
             int result = scheduler.schedule(builder.build());
@@ -75,19 +58,6 @@ public class DownloadScheduler {
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (scheduler != null) {
             scheduler.cancel(jobId);
-        }
-    }
-
-    private static void ensureChannel(Context context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationManager nm = context.getSystemService(NotificationManager.class);
-            if (nm != null && nm.getNotificationChannel(CHANNEL_ID) == null) {
-                NotificationChannel channel = new NotificationChannel(
-                        CHANNEL_ID,
-                        "تحميل الفيديوهات",
-                        NotificationManager.IMPORTANCE_LOW);
-                nm.createNotificationChannel(channel);
-            }
         }
     }
 }
