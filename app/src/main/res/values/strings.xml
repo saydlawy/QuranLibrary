@@ -5,4 +5,10 @@
     <string name="add">إضافة</string>
     <string name="cancel">إلغاء</string>
     <string name="empty_sections">لا توجد أقسام بعد</string>
+    <string name="download_video">تحميل فيديو</string>
+    <string name="url_hint">رابط الفيديو أو قائمة التشغيل</string>
+    <string name="title_hint">عنوان الفيديو (اختياري)</string>
+    <string name="choose_section">اختر القسم</string>
+    <string name="start_download">ابدأ التحميل</string>
+    <string name="new_download">تحميل فيديو جديد</string>
 </resources>

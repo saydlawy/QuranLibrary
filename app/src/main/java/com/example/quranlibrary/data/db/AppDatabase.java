@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.room.Database;
 import androidx.room.Room;
 import androidx.room.RoomDatabase;
+import androidx.room.TypeConverters;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 
 import java.util.ArrayList;
@@ -15,18 +16,24 @@ import java.util.concurrent.Executors;
 
 /**
  * قاعدة بيانات التطبيق الرئيسية.
- * - نمط Singleton لضمان وجود نسخة واحدة فقط.
+ * - نمط Singleton.
  * - تهيئة الأقسام الافتراضية عند أول إنشاء.
- * - استخدام ExecutorService لتنفيذ عمليات الكتابة في الخلفية.
+ * - TypeConverters لدعم enums.
  */
-@Database(entities = {Section.class}, version = 1, exportSchema = false)
+@Database(
+        entities = {Section.class, Video.class},
+        version = 2,
+        exportSchema = false
+)
+@TypeConverters({Converters.class})
 public abstract class AppDatabase extends RoomDatabase {
 
     public abstract SectionDao sectionDao();
+    public abstract VideoDao videoDao();
 
     private static volatile AppDatabase INSTANCE;
     private static final ExecutorService databaseWriteExecutor =
-            Executors.newFixedThreadPool(2);
+            Executors.newFixedThreadPool(4);
 
     public static AppDatabase getInstance(Context context) {
         if (INSTANCE == null) {
@@ -37,6 +44,7 @@ public abstract class AppDatabase extends RoomDatabase {
                                     AppDatabase.class,
                                     "quran_library_db")
                             .addCallback(seedCallback)
+                            .fallbackToDestructiveMigration()
                             .build();
                 }
             }
@@ -44,10 +52,6 @@ public abstract class AppDatabase extends RoomDatabase {
         return INSTANCE;
     }
 
-    /**
-     * يُشغَّل عند أول إنشاء لقاعدة البيانات فقط.
-     * يضيف الأقسام الافتراضية الأساسية.
-     */
     private static final RoomDatabase.Callback seedCallback = new RoomDatabase.Callback() {
         @Override
         public void onCreate(@NonNull SupportSQLiteDatabase db) {
@@ -61,9 +65,6 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
-    /**
-     * قائمة الأقسام الافتراضية. قابلة للتوسع بسهولة.
-     */
     private static List<Section> defaultSections() {
         List<Section> list = new ArrayList<>();
         list.add(new Section("القرآن الكريم", "quran", 1, true));
@@ -72,9 +73,6 @@ public abstract class AppDatabase extends RoomDatabase {
         return list;
     }
 
-    /**
-     * يُستخدم من طبقة Repository لتنفيذ عمليات الكتابة في الخلفية.
-     */
     public static ExecutorService getWriteExecutor() {
         return databaseWriteExecutor;
     }

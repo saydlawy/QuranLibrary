@@ -1,16 +1,26 @@
 package com.example.quranlibrary;
 
+import android.Manifest;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.quranlibrary.ui.DownloadActivity;
 import com.example.quranlibrary.ui.MainViewModel;
 import com.example.quranlibrary.ui.SectionsAdapter;
 import com.google.android.material.appbar.MaterialToolbar;
@@ -21,6 +31,15 @@ public class MainActivity extends AppCompatActivity {
 
     private MainViewModel viewModel;
     private SectionsAdapter adapter;
+
+    private final ActivityResultLauncher<String> notificationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                if (!granted) {
+                    Toast.makeText(this,
+                            "الإشعارات مطلوبة لعرض تقدم التحميل",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,9 +52,8 @@ public class MainActivity extends AppCompatActivity {
         RecyclerView recyclerView = findViewById(R.id.sectionsRecyclerView);
         FloatingActionButton fab = findViewById(R.id.addSectionFab);
 
-        adapter = new SectionsAdapter(section -> {
-            Toast.makeText(this, "اخترت: " + section.name, Toast.LENGTH_SHORT).show();
-        });
+        adapter = new SectionsAdapter(section ->
+                Toast.makeText(this, "اخترت: " + section.name, Toast.LENGTH_SHORT).show());
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(adapter);
 
@@ -43,6 +61,23 @@ public class MainActivity extends AppCompatActivity {
         viewModel.getAllSections().observe(this, sections -> adapter.submitList(sections));
 
         fab.setOnClickListener(v -> showAddSectionDialog());
+
+        requestNotificationPermissionIfNeeded();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.action_download) {
+            startActivity(new Intent(this, DownloadActivity.class));
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     private void showAddSectionDialog() {
@@ -68,5 +103,14 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton(R.string.cancel, null)
                 .show();
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+            }
+        }
     }
 }
