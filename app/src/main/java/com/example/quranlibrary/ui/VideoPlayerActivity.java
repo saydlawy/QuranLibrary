@@ -37,6 +37,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         MaterialToolbar toolbar = findViewById(R.id.playerToolbar);
         setSupportActionBar(toolbar);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
         toolbar.setNavigationOnClickListener(v -> finish());
 
         String title = getIntent().getStringExtra(EXTRA_VIDEO_TITLE);
