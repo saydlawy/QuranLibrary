@@ -18,7 +18,6 @@ public class SectionVideosActivity extends AppCompatActivity {
     public static final String EXTRA_SECTION_NAME = "extra_section_name";
 
     private TextView emptyView;
-    private TextView countView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,7 +32,6 @@ public class SectionVideosActivity extends AppCompatActivity {
         toolbar.setNavigationOnClickListener(v -> finish());
 
         emptyView = findViewById(R.id.emptyView);
-        countView = findViewById(R.id.videoCountView);
         RecyclerView recyclerView = findViewById(R.id.videosRecyclerView);
 
         int sectionId = getIntent().getIntExtra(EXTRA_SECTION_ID, -1);
@@ -61,13 +59,11 @@ public class SectionVideosActivity extends AppCompatActivity {
 
             adapter.submitList(videos);
             emptyView.setVisibility(View.GONE);
-            countView.setVisibility(View.VISIBLE);
-            countView.setText(getString(R.string.video_count, videos.size()));
+            recyclerView.setVisibility(View.VISIBLE);
         });
     }
 
     private void showEmptyState() {
         emptyView.setVisibility(View.VISIBLE);
-        countView.setVisibility(View.GONE);
     }
 }
