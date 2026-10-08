@@ -1,33 +1,25 @@
 """
-وحدة تحميل الفيديوهات عبر yt-dlp.
-- تختار الصيغة تلقائيًا حسب توفر ffmpeg حقيقي.
-- عند توفر ffmpeg: دمج bestvideo+bestaudio للحصول على أفضل جودة.
-- بدون ffmpeg: استخدام صيغة مدمجة (عادة 360p).
+وحدة تحميل الفيديوهات عبر yt-dlp (Chaquopy engine only).
+
+قيود معروفة على أندرويد الحديث:
+- لا يمكن تنفيذ ffmpeg من /data/app/ (noexec mount).
+- لذلك نستخدم صيغة مدمجة (فيديو + صوت في ملف واحد) — لا تحتاج ffmpeg.
+- الجودة المتوقعة: 360p–720p حسب ما يوفره YouTube كصيغة مدمجة.
+- حل FFmpeg الجذري مؤجل إلى M6 (binary حقيقي في jniLibs).
 """
 import os
 import traceback
 import yt_dlp
 
 
-def _is_real_executable(path):
-    """
-    يتحقق أن الملف تنفيذي حقيقي (وليس ZIP).
-    - يتخطى الملفات غير الموجودة أو التي تبدأ بـ PK (ZIP).
-    - يتحقق من صلاحية التنفيذ X_OK.
-    """
-    if not path or not os.path.exists(path):
-        return False
-    try:
-        with open(path, 'rb') as f:
-            magic = f.read(2)
-        if magic == b'PK':
-            return False
-        return os.access(path, os.X_OK)
-    except Exception:
-        return False
-
-
 def download(url, output_dir, ffmpeg_path, callback=None):
+    """
+    :param url: رابط الفيديو.
+    :param output_dir: مجلد الحفظ.
+    :param ffmpeg_path: غير مستخدم حاليًا (محفوظ للتوقيع فقط).
+    :param callback: كائن Java فيه onProgress(percent, status, message).
+    :return: dict فيه بيانات الفيديو النهائية.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     def safe_progress(percent, status, message):
@@ -50,22 +42,10 @@ def download(url, output_dir, ffmpeg_path, callback=None):
         except Exception as e:
             print(f"progress_hook outer error: {e}")
 
-    ffmpeg_ok = _is_real_executable(ffmpeg_path)
-
-    if ffmpeg_ok:
-        format_str = ('bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]'
-                      '/bestvideo[height<=1080]+bestaudio/best')
-        merge_format = 'mp4'
-        print(f"[downloader] FFmpeg OK, using merge strategy: {ffmpeg_path}")
-    else:
-        format_str = 'best[ext=mp4]/best[ext=webm]/best'
-        merge_format = None
-        print(f"[downloader] FFmpeg unavailable (path={ffmpeg_path}), "
-              f"using pre-merged format (lower quality expected)")
-
+    # الصيغة المدمجة: فيديو + صوت في ملف واحد (لا يحتاج ffmpeg)
     ydl_opts = {
         'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
-        'format': format_str,
+        'format': 'best[ext=mp4]/best[ext=webm]/best',
         'progress_hooks': [progress_hook],
         'continuedl': True,
         'noplaylist': True,
@@ -76,10 +56,6 @@ def download(url, output_dir, ffmpeg_path, callback=None):
         'ignoreerrors': False,
         'socket_timeout': 30,
     }
-
-    if merge_format:
-        ydl_opts['merge_output_format'] = merge_format
-        ydl_opts['ffmpeg_location'] = ffmpeg_path
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
