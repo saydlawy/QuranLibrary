@@ -27,10 +27,6 @@ public class AppDatabaseMigrationTest {
         context.deleteDatabase(name);
 
         SQLiteDatabase legacy = context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null);
-        legacy.execSQL("CREATE TABLE IF NOT EXISTS room_master_table "
-                + "(id INTEGER PRIMARY KEY, identity_hash TEXT)");
-        legacy.execSQL("INSERT OR REPLACE INTO room_master_table (id, identity_hash) "
-                + "VALUES (42, 'legacy-v3-hash')");
         legacy.execSQL("CREATE TABLE sections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
                 + "name TEXT, icon_key TEXT, sort_order INTEGER NOT NULL, "
                 + "is_default INTEGER NOT NULL, created_at INTEGER NOT NULL)");
