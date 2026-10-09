@@ -63,7 +63,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("ALTER TABLE videos ADD COLUMN playlist_position INTEGER");
             db.execSQL("ALTER TABLE videos ADD COLUMN downloaded_at INTEGER NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE videos ADD COLUMN sha256 TEXT");
-            db.execSQL("ALTER TABLE videos ADD COLUMN metadata_status TEXT DEFAULT 'PENDING'");
+            db.execSQL("ALTER TABLE videos ADD COLUMN metadata_status TEXT NOT NULL DEFAULT 'PENDING'");
             db.execSQL("CREATE INDEX IF NOT EXISTS index_videos_source_id ON videos(source_id)");
         }
     };
