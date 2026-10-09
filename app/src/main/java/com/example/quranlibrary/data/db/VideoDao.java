@@ -32,6 +32,9 @@ public interface VideoDao {
     @Query("SELECT * FROM videos WHERE download_status IN ('PENDING', 'DOWNLOADING', 'PAUSED')")
     List<Video> getIncompleteDownloads();
 
+    @Query("SELECT * FROM videos WHERE playlist_id = :playlistId AND download_status = 'PENDING' ORDER BY playlist_position ASC LIMIT 1")
+    Video getNextPendingPlaylistVideo(String playlistId);
+
     @Insert
     long insert(Video video);
 
