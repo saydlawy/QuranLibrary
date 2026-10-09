@@ -56,6 +56,10 @@ public interface VideoDao {
     @Query("UPDATE videos SET file_path = :filePath, size_bytes = :sizeBytes, duration_ms = :durationMs, download_status = :status, progress = 100, error_message = NULL WHERE id = :id")
     void markCompleted(int id, String filePath, long sizeBytes, long durationMs, DownloadStatus status);
 
+    @Query("UPDATE videos SET file_path = :filePath, size_bytes = :sizeBytes, duration_ms = :durationMs, downloaded_at = :downloadedAt, sha256 = :sha256, download_status = :status, progress = 100, error_message = NULL WHERE id = :id")
+    void markCompletedWithMetadata(int id, String filePath, long sizeBytes, long durationMs,
+                                   long downloadedAt, String sha256, DownloadStatus status);
+
     @Query("UPDATE videos SET watch_position_ms = :positionMs WHERE id = :id")
     void updateWatchPosition(int id, long positionMs);
 
