@@ -238,7 +238,7 @@ public class DownloadJobService extends JobService {
                 for (int i = 0; i < entries.length(); i++) {
                     if (jobCancelled) break;
                     JSONObject entry = entries.optJSONObject(i);
-                    if (entry == null || entry.optBoolean("_type".equals("unavailable"), false)) {
+                    if (entry == null || "unavailable".equalsIgnoreCase(entry.optString("_type", ""))) {
                         continue;
                     }
 
