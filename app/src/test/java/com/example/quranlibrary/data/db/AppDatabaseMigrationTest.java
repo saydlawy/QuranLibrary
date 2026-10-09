@@ -56,7 +56,7 @@ public class AppDatabaseMigrationTest {
             legacy.execSQL("ALTER TABLE videos ADD COLUMN playlist_position INTEGER");
             legacy.execSQL("ALTER TABLE videos ADD COLUMN downloaded_at INTEGER NOT NULL DEFAULT 0");
             legacy.execSQL("ALTER TABLE videos ADD COLUMN sha256 TEXT");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN metadata_status TEXT NOT NULL DEFAULT 'PENDING'");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN metadata_status TEXT DEFAULT 'PENDING'");
             legacy.execSQL("CREATE INDEX IF NOT EXISTS index_videos_source_id ON videos(source_id)");
             legacy.setVersion(4);
 
