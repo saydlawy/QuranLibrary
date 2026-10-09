@@ -26,6 +26,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.security.MessageDigest;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -90,6 +93,8 @@ public class DownloadJobService extends JobService {
         new Thread(() -> {
             try {
                 initEngine();
+                enrichSingleVideoMetadata(dao, videoId, url);
+                processId = "video-" + videoId;
                 YoutubeDLRequest request = buildRequest(url, outputDir, quality, mode);
                 dao.updateProgress(videoId, 0, DownloadStatus.DOWNLOADING);
 
@@ -146,11 +151,16 @@ public class DownloadJobService extends JobService {
                     return;
                 }
 
-                dao.markCompleted(
+                Video savedVideo = dao.getVideoById(videoId);
+                long durationMs = savedVideo == null ? 0L : savedVideo.durationMs;
+                String sha256 = computeSha256(output);
+                dao.markCompletedWithMetadata(
                         videoId,
                         finalPath,
                         output.length(),
-                        0,
+                        durationMs,
+                        System.currentTimeMillis(),
+                        sha256,
                         DownloadStatus.COMPLETED);
                 Log.d(TAG, "اكتمل التحميل: " + finalPath);
                 updateNotification(title, 100, "اكتمل التحميل");
@@ -398,6 +408,80 @@ public class DownloadJobService extends JobService {
         }
     }
 
+    private void enrichSingleVideoMetadata(VideoDao dao, int videoId, String url) {
+        Video video = dao.getVideoById(videoId);
+        if (video == null) return;
+
+        try {
+            YoutubeDLRequest request = new YoutubeDLRequest(url);
+            request.addOption("--dump-single-json");
+            request.addOption("--skip-download");
+            request.addOption("--no-playlist");
+            request.addOption("--no-warnings");
+            request.addOption("--extractor-args", "youtube:player_client=android");
+
+            String metadataProcessId = "metadata-" + videoId;
+            processId = metadataProcessId;
+            YoutubeDLResponse response = YoutubeDL.getInstance().execute(
+                    request,
+                    metadataProcessId,
+                    (progress, eta, line) -> kotlin.Unit.INSTANCE);
+            if (response.getExitCode() != 0) {
+                throw new IllegalStateException("yt-dlp metadata exit code " + response.getExitCode());
+            }
+
+            JSONObject metadata = parseJsonObject(response.getOut());
+            String sourceTitle = metadata.optString("title", "").trim();
+            if (!sourceTitle.isEmpty()
+                    && (video.title == null || video.title.trim().isEmpty()
+                    || "فيديو جديد".equals(video.title) || "فيديو".equals(video.title))) {
+                video.title = sourceTitle;
+            }
+            video.sourceId = firstNonEmpty(metadata.optString("id", ""), video.sourceId);
+            video.sourceType = firstNonEmpty(
+                    metadata.optString("extractor_key", ""),
+                    metadata.optString("extractor", "youtube"));
+            video.channelName = firstNonEmpty(
+                    metadata.optString("channel", ""),
+                    metadata.optString("uploader", ""));
+            video.thumbnailUrl = firstNonEmpty(
+                    metadata.optString("thumbnail", ""),
+                    findThumbnail(metadata.optJSONArray("thumbnails")));
+            video.publishedAt = parsePublishedAt(metadata.optString("upload_date", ""));
+            video.durationMs = Math.max(0L, metadata.optLong("duration", 0L)) * 1000L;
+            video.metadataStatus = "AVAILABLE";
+            dao.update(video);
+        } catch (Exception e) {
+            Log.w(TAG, "تعذر استخراج البيانات الوصفية؛ سيستمر تنزيل الفيديو", e);
+            Video latest = dao.getVideoById(videoId);
+            if (latest != null) {
+                latest.metadataStatus = "FAILED";
+                dao.update(latest);
+            }
+        }
+    }
+
+    private String computeSha256(File file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            try (InputStream input = new FileInputStream(file)) {
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    digest.update(buffer, 0, read);
+                }
+            }
+            StringBuilder hex = new StringBuilder(64);
+            for (byte value : digest.digest()) {
+                hex.append(String.format(Locale.US, "%02x", value & 0xff));
+            }
+            return hex.toString();
+        } catch (Exception e) {
+            Log.w(TAG, "تعذر حساب SHA-256 للملف " + file.getName(), e);
+            return null;
+        }
+    }
+
     private void initEngine() throws Exception {
         YoutubeDL.getInstance().init(getApplicationContext());
         FFmpeg.getInstance().init(getApplicationContext());
@@ -418,7 +502,7 @@ public class DownloadJobService extends JobService {
             request.addOption("--merge-output-format", "mp4");
         }
 
-        request.addOption("-o", new File(outputDir, "%(title)s.%(ext)s").getAbsolutePath());
+        request.addOption("-o", new File(outputDir, "%(title)s [%(id)s].%(ext)s").getAbsolutePath());
         request.addOption("--print", "after_move:filepath");
         request.addOption("--no-mtime");
         request.addOption("--retries", "5");
