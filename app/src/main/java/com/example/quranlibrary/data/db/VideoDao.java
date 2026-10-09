@@ -20,6 +20,15 @@ public interface VideoDao {
     @Query("SELECT * FROM videos ORDER BY created_at DESC")
     LiveData<List<Video>> getAllVideos();
 
+    @Query("SELECT * FROM videos ORDER BY id ASC")
+    List<Video> getAllVideosSnapshot();
+
+    @Query("SELECT * FROM videos WHERE section_id = :sectionId AND youtube_url = :url LIMIT 1")
+    Video getByUrlAndSection(int sectionId, String url);
+
+    @Query("SELECT * FROM videos WHERE section_id = :sectionId AND source_id = :sourceId LIMIT 1")
+    Video getBySourceIdAndSection(int sectionId, String sourceId);
+
     @Query("SELECT * FROM videos WHERE id = :id LIMIT 1")
     Video getVideoById(int id);
 
