@@ -189,6 +189,7 @@ public class DownloadJobService extends JobService {
         processId = "playlist-" + placeholderVideoId;
 
         new Thread(() -> {
+            String expandedPlaylistId = null;
             try {
                 initEngine();
                 YoutubeDLRequest request = new YoutubeDLRequest(url);
@@ -233,6 +234,7 @@ public class DownloadJobService extends JobService {
                 if (playlistId.isEmpty()) {
                     throw new IllegalStateException("تعذر تحديد معرّف قائمة التشغيل");
                 }
+                expandedPlaylistId = playlistId;
 
                 int insertedCount = 0;
                 for (int i = 0; i < entries.length(); i++) {
@@ -282,7 +284,6 @@ public class DownloadJobService extends JobService {
                 Log.i(TAG, "تم تسجيل " + insertedCount + " فيديو من القائمة " + playlistId);
                 updateNotification(requestedTitle, 100,
                         "تم العثور على " + insertedCount + " فيديو؛ بدء التنزيل");
-                scheduleNextPlaylistVideo(playlistId, outputDir, quality);
             } catch (Exception e) {
                 Log.e(TAG, "فشل تحليل قائمة التشغيل", e);
                 if (jobCancelled) {
@@ -294,9 +295,13 @@ public class DownloadJobService extends JobService {
                             e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
                 }
             } finally {
+                boolean wasCancelled = jobCancelled;
                 processId = null;
                 cancelNotification();
                 jobFinished(params, false);
+                if (!wasCancelled && expandedPlaylistId != null) {
+                    scheduleNextPlaylistVideo(expandedPlaylistId, outputDir, quality);
+                }
             }
         }, "ytdlp-playlist-" + placeholderVideoId).start();
     }
