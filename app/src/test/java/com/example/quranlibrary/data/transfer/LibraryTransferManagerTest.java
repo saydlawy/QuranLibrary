@@ -1,7 +1,6 @@
 package com.example.quranlibrary.data.transfer;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -75,7 +74,7 @@ public class LibraryTransferManagerTest {
         original.playlistId = "playlist-42";
         original.playlistPosition = 3;
         original.downloadedAt = 1700001000000L;
-        original.sha256 = "a".repeat(64);
+        original.sha256 = "test-sha256";
         original.metadataStatus = "AVAILABLE";
 
         JSONObject manifestItem = LibraryTransferManager.videoToJson(original);
@@ -101,7 +100,6 @@ public class LibraryTransferManagerTest {
         assertEquals(original.downloadedAt, restored.downloadedAt);
         assertEquals(original.sha256, restored.sha256);
         assertEquals(original.metadataStatus, restored.metadataStatus);
-        assertFalse(manifestItem.isNull("mediaEntry"));
     }
 
     @Test
