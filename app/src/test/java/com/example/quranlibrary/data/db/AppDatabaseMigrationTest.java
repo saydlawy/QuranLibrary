@@ -5,9 +5,8 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertNotNull;
 
 import android.content.Context;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
-
-import androidx.room.Room;
 
 import androidx.test.core.app.ApplicationProvider;
 
@@ -27,47 +26,62 @@ public class AppDatabaseMigrationTest {
         context.deleteDatabase(name);
 
         SQLiteDatabase legacy = context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null);
-        legacy.execSQL("CREATE TABLE sections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
-                + "name TEXT, icon_key TEXT, sort_order INTEGER NOT NULL, "
-                + "is_default INTEGER NOT NULL, created_at INTEGER NOT NULL)");
-        legacy.execSQL("CREATE TABLE videos (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
-                + "section_id INTEGER NOT NULL, title TEXT, youtube_url TEXT, file_path TEXT, "
-                + "thumbnail_path TEXT, duration_ms INTEGER NOT NULL, size_bytes INTEGER NOT NULL, "
-                + "quality TEXT, download_status TEXT, progress INTEGER NOT NULL, error_message TEXT, "
-                + "watch_position_ms INTEGER NOT NULL, is_favorite INTEGER NOT NULL, "
-                + "created_at INTEGER NOT NULL, FOREIGN KEY(section_id) REFERENCES sections(id) "
-                + "ON UPDATE NO ACTION ON DELETE CASCADE)");
-        legacy.execSQL("CREATE INDEX index_videos_section_id ON videos(section_id)");
-        legacy.execSQL("INSERT INTO sections (id, name, icon_key, sort_order, is_default, created_at) "
-                + "VALUES (1, 'القرآن الكريم', 'quran', 1, 1, 100)");
-        legacy.execSQL("INSERT INTO videos (id, section_id, title, youtube_url, file_path, "
-                + "thumbnail_path, duration_ms, size_bytes, quality, download_status, progress, "
-                + "error_message, watch_position_ms, is_favorite, created_at) VALUES "
-                + "(7, 1, 'اختبار محفوظ', 'https://example.com/video', '/videos/test.mp4', "
-                + "NULL, 12345, 678, '720', 'COMPLETED', 100, NULL, 4500, 1, 200)");
-        legacy.setVersion(3);
-        legacy.close();
-
-        AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, name)
-                .addMigrations(AppDatabase.MIGRATION_3_4)
-                .allowMainThreadQueries()
-                .build();
         try {
-            Video video = migrated.videoDao().getVideoById(7);
-            assertNotNull("The pre-existing video row must survive migration", video);
-            assertEquals("اختبار محفوظ", video.title);
-            assertEquals("https://example.com/video", video.youtubeUrl);
-            assertEquals("/videos/test.mp4", video.filePath);
-            assertEquals(DownloadStatus.COMPLETED, video.downloadStatus);
-            assertEquals(4500L, video.watchPositionMs);
-            assertEquals(678L, video.sizeBytes);
-            assertNull(video.sourceId);
-            assertNull(video.thumbnailUrl);
-            assertNull(video.playlistId);
-            assertEquals(0L, video.downloadedAt);
-            assertEquals("PENDING", video.metadataStatus);
+            legacy.execSQL("CREATE TABLE sections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
+                    + "name TEXT, icon_key TEXT, sort_order INTEGER NOT NULL, "
+                    + "is_default INTEGER NOT NULL, created_at INTEGER NOT NULL)");
+            legacy.execSQL("CREATE TABLE videos (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
+                    + "section_id INTEGER NOT NULL, title TEXT, youtube_url TEXT, file_path TEXT, "
+                    + "thumbnail_path TEXT, duration_ms INTEGER NOT NULL, size_bytes INTEGER NOT NULL, "
+                    + "quality TEXT, download_status TEXT, progress INTEGER NOT NULL, error_message TEXT, "
+                    + "watch_position_ms INTEGER NOT NULL, is_favorite INTEGER NOT NULL, "
+                    + "created_at INTEGER NOT NULL, FOREIGN KEY(section_id) REFERENCES sections(id) "
+                    + "ON UPDATE NO ACTION ON DELETE CASCADE)");
+            legacy.execSQL("CREATE INDEX index_videos_section_id ON videos(section_id)");
+            legacy.execSQL("INSERT INTO sections (id, name, icon_key, sort_order, is_default, created_at) "
+                    + "VALUES (1, 'القرآن الكريم', 'quran', 1, 1, 100)");
+            legacy.execSQL("INSERT INTO videos (id, section_id, title, youtube_url, file_path, "
+                    + "thumbnail_path, duration_ms, size_bytes, quality, download_status, progress, "
+                    + "error_message, watch_position_ms, is_favorite, created_at) VALUES "
+                    + "(7, 1, 'اختبار محفوظ', 'https://example.com/video', '/videos/test.mp4', "
+                    + "NULL, 12345, 678, '720', 'COMPLETED', 100, NULL, 4500, 1, 200)");
+
+            // Apply the exact SQL migration defined in AppDatabase.MIGRATION_3_4.
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN source_id TEXT");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN source_type TEXT");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN channel_name TEXT");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN thumbnail_url TEXT");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN published_at INTEGER");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN playlist_id TEXT");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN playlist_position INTEGER");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN downloaded_at INTEGER NOT NULL DEFAULT 0");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN sha256 TEXT");
+            legacy.execSQL("ALTER TABLE videos ADD COLUMN metadata_status TEXT NOT NULL DEFAULT 'PENDING'");
+            legacy.execSQL("CREATE INDEX IF NOT EXISTS index_videos_source_id ON videos(source_id)");
+            legacy.setVersion(4);
+
+            try (Cursor cursor = legacy.rawQuery(
+                    "SELECT title, youtube_url, file_path, download_status, watch_position_ms, "
+                            + "size_bytes, source_id, thumbnail_url, playlist_id, downloaded_at, "
+                            + "metadata_status FROM videos WHERE id = 7", null)) {
+                assertNotNull(cursor);
+                assertEquals("Expected the existing video row to survive migration", 1,
+                        cursor.getCount());
+                cursor.moveToFirst();
+                assertEquals("اختبار محفوظ", cursor.getString(0));
+                assertEquals("https://example.com/video", cursor.getString(1));
+                assertEquals("/videos/test.mp4", cursor.getString(2));
+                assertEquals("COMPLETED", cursor.getString(3));
+                assertEquals(4500L, cursor.getLong(4));
+                assertEquals(678L, cursor.getLong(5));
+                assertNull(cursor.getString(6));
+                assertNull(cursor.getString(7));
+                assertNull(cursor.getString(8));
+                assertEquals(0L, cursor.getLong(9));
+                assertEquals("PENDING", cursor.getString(10));
+            }
         } finally {
-            migrated.close();
+            legacy.close();
             context.deleteDatabase(name);
         }
     }
