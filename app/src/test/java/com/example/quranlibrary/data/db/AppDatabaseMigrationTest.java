@@ -112,7 +112,13 @@ public class AppDatabaseMigrationTest {
                 .allowMainThreadQueries()
                 .build();
         try {
-            migrated.getOpenHelper().getWritableDatabase();
+            try {
+                migrated.getOpenHelper().getWritableDatabase();
+            } catch (RuntimeException exception) {
+                System.err.println("ROOM_MIGRATION_DIAGNOSTIC: " + exception);
+                exception.printStackTrace(System.err);
+                throw exception;
+            }
             Section section = migrated.sectionDao().getSectionByName("قسم قديم");
             assertNotNull("Existing section should survive all migrations", section);
             assertEquals(9, section.id);
