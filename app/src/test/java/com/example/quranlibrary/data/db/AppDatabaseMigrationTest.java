@@ -45,43 +45,33 @@ public class AppDatabaseMigrationTest {
                     + "error_message, watch_position_ms, is_favorite, created_at) VALUES "
                     + "(7, 1, 'اختبار محفوظ', 'https://example.com/video', '/videos/test.mp4', "
                     + "NULL, 12345, 678, '720', 'COMPLETED', 100, NULL, 4500, 1, 200)");
-
-            // Apply the exact SQL migration defined in AppDatabase.MIGRATION_3_4.
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN source_id TEXT");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN source_type TEXT");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN channel_name TEXT");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN thumbnail_url TEXT");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN published_at INTEGER");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN playlist_id TEXT");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN playlist_position INTEGER");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN downloaded_at INTEGER NOT NULL DEFAULT 0");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN sha256 TEXT");
-            legacy.execSQL("ALTER TABLE videos ADD COLUMN metadata_status TEXT DEFAULT 'PENDING'");
-            legacy.execSQL("CREATE INDEX IF NOT EXISTS index_videos_source_id ON videos(source_id)");
-            legacy.setVersion(4);
-
-            try (Cursor cursor = legacy.rawQuery(
-                    "SELECT title, youtube_url, file_path, download_status, watch_position_ms, "
-                            + "size_bytes, source_id, thumbnail_url, playlist_id, downloaded_at, "
-                            + "metadata_status FROM videos WHERE id = 7", null)) {
-                assertNotNull(cursor);
-                assertEquals("Expected the existing video row to survive migration", 1,
-                        cursor.getCount());
-                cursor.moveToFirst();
-                assertEquals("اختبار محفوظ", cursor.getString(0));
-                assertEquals("https://example.com/video", cursor.getString(1));
-                assertEquals("/videos/test.mp4", cursor.getString(2));
-                assertEquals("COMPLETED", cursor.getString(3));
-                assertEquals(4500L, cursor.getLong(4));
-                assertEquals(678L, cursor.getLong(5));
-                assertNull(cursor.getString(6));
-                assertNull(cursor.getString(7));
-                assertNull(cursor.getString(8));
-                assertEquals(0L, cursor.getLong(9));
-                assertEquals("PENDING", cursor.getString(10));
-            }
+            legacy.setVersion(3);
         } finally {
             legacy.close();
+        }
+
+        AppDatabase migrated = androidx.room.Room.databaseBuilder(
+                        context, AppDatabase.class, name)
+                .addMigrations(AppDatabase.MIGRATION_3_4)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            migrated.getOpenHelper().getWritableDatabase();
+            Video video = migrated.videoDao().getVideoById(7);
+            assertNotNull("Existing video should survive the real Room migration", video);
+            assertEquals("اختبار محفوظ", video.title);
+            assertEquals("https://example.com/video", video.youtubeUrl);
+            assertEquals("/videos/test.mp4", video.filePath);
+            assertEquals(DownloadStatus.COMPLETED, video.downloadStatus);
+            assertEquals(4500L, video.watchPositionMs);
+            assertEquals(678L, video.sizeBytes);
+            assertNull(video.sourceId);
+            assertNull(video.thumbnailUrl);
+            assertNull(video.playlistId);
+            assertEquals(0L, video.downloadedAt);
+            assertEquals("PENDING", video.metadataStatus);
+        } finally {
+            migrated.close();
             context.deleteDatabase(name);
         }
     }
