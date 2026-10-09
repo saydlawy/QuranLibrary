@@ -314,7 +314,7 @@ public final class LibraryTransferManager {
         }
     }
 
-    private static File safeChild(File root, String relative) throws Exception {
+    static File safeChild(File root, String relative) throws Exception {
         File child = new File(root, relative);
         if (!child.getCanonicalPath().startsWith(root.getCanonicalPath() + File.separator)) {
             throw new IllegalArgumentException("مسار ملف خارج مجلد الاستيراد");
@@ -354,7 +354,7 @@ public final class LibraryTransferManager {
         return hash.toString();
     }
 
-    private static String extension(String name) {
+    static String extension(String name) {
         int dot = name.lastIndexOf('.');
         if (dot >= 0 && name.length() - dot <= 10
                 && name.substring(dot).matches("\\.[A-Za-z0-9]{1,8}")) {
