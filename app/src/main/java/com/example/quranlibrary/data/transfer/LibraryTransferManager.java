@@ -259,6 +259,7 @@ public final class LibraryTransferManager {
         Video v = new Video(sectionId, o.optString("title", "فيديو مستورد"),
                 o.optString("youtubeUrl", ""));
         v.durationMs = o.optLong("durationMs", 0);
+        v.sizeBytes = o.optLong("sizeBytes", 0);
         v.quality = nullableString(o, "quality");
         v.errorMessage = nullableString(o, "errorMessage");
         v.watchPositionMs = o.optLong("watchPositionMs", 0);
