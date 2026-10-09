@@ -234,8 +234,6 @@ public class DownloadJobService extends JobService {
                 if (playlistId.isEmpty()) {
                     throw new IllegalStateException("تعذر تحديد معرّف قائمة التشغيل");
                 }
-                expandedPlaylistId = playlistId;
-
                 int insertedCount = 0;
                 for (int i = 0; i < entries.length(); i++) {
                     if (jobCancelled) break;
@@ -281,6 +279,7 @@ public class DownloadJobService extends JobService {
                 }
 
                 dao.deleteById(placeholderVideoId);
+                expandedPlaylistId = playlistId;
                 Log.i(TAG, "تم تسجيل " + insertedCount + " فيديو من القائمة " + playlistId);
                 updateNotification(requestedTitle, 100,
                         "تم العثور على " + insertedCount + " فيديو؛ بدء التنزيل");
