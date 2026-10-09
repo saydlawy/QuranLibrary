@@ -116,7 +116,7 @@ public class AppDatabaseMigrationTest {
             Section section = migrated.sectionDao().getSectionByName("قسم قديم");
             assertNotNull("Existing section should survive all migrations", section);
             assertEquals(9, section.id);
-            assertEquals(1, migrated.videoDao().getAllVideosSnapshot().size() + 1);
+            assertEquals(0, migrated.videoDao().getAllVideosSnapshot().size());
         } finally {
             migrated.close();
             context.deleteDatabase(name);
