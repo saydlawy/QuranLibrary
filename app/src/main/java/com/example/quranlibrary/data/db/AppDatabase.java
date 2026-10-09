@@ -28,6 +28,29 @@ import java.util.concurrent.Executors;
 @TypeConverters({Converters.class})
 public abstract class AppDatabase extends RoomDatabase {
 
+    public static final Migration MIGRATION_1_2 = new Migration(1, 2) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS videos ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
+                    + "section_id INTEGER NOT NULL, title TEXT, youtube_url TEXT, "
+                    + "file_path TEXT, thumbnail_path TEXT, duration_ms INTEGER NOT NULL, "
+                    + "size_bytes INTEGER NOT NULL, quality TEXT, download_status TEXT, "
+                    + "progress INTEGER NOT NULL, watch_position_ms INTEGER NOT NULL, "
+                    + "is_favorite INTEGER NOT NULL, created_at INTEGER NOT NULL, "
+                    + "FOREIGN KEY(section_id) REFERENCES sections(id) "
+                    + "ON UPDATE NO ACTION ON DELETE CASCADE)");
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_videos_section_id ON videos(section_id)");
+        }
+    };
+
+    public static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE videos ADD COLUMN error_message TEXT");
+        }
+    };
+
     public static final Migration MIGRATION_3_4 = new Migration(3, 4) {
         @Override
         public void migrate(@NonNull SupportSQLiteDatabase db) {
@@ -60,7 +83,7 @@ public abstract class AppDatabase extends RoomDatabase {
                                     context.getApplicationContext(),
                                     AppDatabase.class,
                                     "quran_library_db")
-                            .addMigrations(MIGRATION_3_4)
+                            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                             .addCallback(seedCallback)
                             .build();
                 }
