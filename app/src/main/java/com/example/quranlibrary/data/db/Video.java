@@ -1,5 +1,6 @@
 package com.example.quranlibrary.data.db;
 
+import androidx.annotation.NonNull;
 import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.ForeignKey;
@@ -92,6 +93,7 @@ public class Video {
     @ColumnInfo(name = "sha256")
     public String sha256;
 
+    @NonNull
     @ColumnInfo(name = "metadata_status", defaultValue = "'PENDING'")
     public String metadataStatus;
 
