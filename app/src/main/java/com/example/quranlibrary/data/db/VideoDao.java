@@ -29,6 +29,12 @@ public interface VideoDao {
     @Query("SELECT * FROM videos WHERE section_id = :sectionId AND source_id = :sourceId LIMIT 1")
     Video getBySourceIdAndSection(int sectionId, String sourceId);
 
+    @Query("SELECT * FROM videos WHERE section_id = :sectionId AND source_id = :sourceId AND playlist_id = :playlistId LIMIT 1")
+    Video getBySourceIdSectionAndPlaylist(int sectionId, String sourceId, String playlistId);
+
+    @Query("SELECT * FROM videos WHERE section_id = :sectionId AND youtube_url = :url AND playlist_id = :playlistId LIMIT 1")
+    Video getByUrlSectionAndPlaylist(int sectionId, String url, String playlistId);
+
     @Query("SELECT * FROM videos WHERE id = :id LIMIT 1")
     Video getVideoById(int id);
 
