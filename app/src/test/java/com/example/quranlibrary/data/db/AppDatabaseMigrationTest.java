@@ -87,6 +87,43 @@ public class AppDatabaseMigrationTest {
     }
 
     @Test
+    public void roomMigratesVersion1ThroughVersion4WithoutDroppingSections() {
+        Context context = ApplicationProvider.getApplicationContext();
+        String name = "migration-v1-to-v4-test.db";
+        context.deleteDatabase(name);
+
+        SQLiteDatabase legacy = context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null);
+        try {
+            legacy.execSQL("CREATE TABLE sections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
+                    + "name TEXT, icon_key TEXT, sort_order INTEGER NOT NULL, "
+                    + "is_default INTEGER NOT NULL, created_at INTEGER NOT NULL)");
+            legacy.execSQL("INSERT INTO sections "
+                    + "(id, name, icon_key, sort_order, is_default, created_at) "
+                    + "VALUES (9, 'قسم قديم', 'archive', 4, 0, 123)");
+            legacy.setVersion(1);
+        } finally {
+            legacy.close();
+        }
+
+        AppDatabase migrated = androidx.room.Room.databaseBuilder(
+                        context, AppDatabase.class, name)
+                .addMigrations(AppDatabase.MIGRATION_1_2,
+                        AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            migrated.getOpenHelper().getWritableDatabase();
+            Section section = migrated.sectionDao().getSectionByName("قسم قديم");
+            assertNotNull("Existing section should survive all migrations", section);
+            assertEquals(9, section.id);
+            assertEquals(1, migrated.videoDao().getAllVideosSnapshot().size() + 1);
+        } finally {
+            migrated.close();
+            context.deleteDatabase(name);
+        }
+    }
+
+    @Test
     public void newVideoStartsWithExplicitPendingMetadataState() {
         Video video = new Video(1, "عنوان تجريبي", "https://example.com/watch?v=abc");
         assertEquals(DownloadStatus.PENDING, video.downloadStatus);
