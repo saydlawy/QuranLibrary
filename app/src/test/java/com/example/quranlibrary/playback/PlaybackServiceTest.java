@@ -2,8 +2,6 @@ package com.example.quranlibrary.playback;
 
 import static org.junit.Assert.assertNotNull;
 
-import androidx.test.core.app.ApplicationProvider;
-
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
