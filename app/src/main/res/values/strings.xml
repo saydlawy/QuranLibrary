@@ -11,6 +11,8 @@
     <string name="choose_section">اختر القسم</string>
     <string name="start_download">ابدأ التحميل</string>
     <string name="new_download">تحميل فيديو جديد</string>
+    <string name="export_library">تصدير المكتبة كاملة</string>
+    <string name="import_library">استيراد نسخة احتياطية</string>
     <string name="section_videos">محتوى القسم</string>
     <string name="empty_videos">لا توجد فيديوهات في هذا القسم بعد.</string>
     <string name="download_completed">اكتمل التحميل</string>
