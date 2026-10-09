@@ -94,6 +94,11 @@ public class DownloadJobService extends JobService {
             try {
                 initEngine();
                 enrichSingleVideoMetadata(dao, videoId, url);
+                if (jobCancelled) {
+                    dao.updateStatusWithError(
+                            videoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
+                    return;
+                }
                 processId = "video-" + videoId;
                 YoutubeDLRequest request = buildRequest(url, outputDir, quality, mode);
                 dao.updateProgress(videoId, 0, DownloadStatus.DOWNLOADING);
