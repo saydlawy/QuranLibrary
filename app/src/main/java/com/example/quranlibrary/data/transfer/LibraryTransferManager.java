@@ -104,6 +104,8 @@ public final class LibraryTransferManager {
         if (!staging.mkdirs() && !staging.isDirectory()) {
             throw new IllegalStateException("تعذر إنشاء مجلد مؤقت للاستيراد");
         }
+        Map<Integer, String> copied = new HashMap<>();
+        boolean importCommitted = false;
         try {
             extractSafely(context, source, staging);
             File manifestFile = new File(staging, "manifest.json");
@@ -127,7 +129,6 @@ public final class LibraryTransferManager {
                 throw new IllegalStateException("تعذر إنشاء مجلد ملفات الفيديو المستوردة");
             }
 
-            Map<Integer, String> copied = new HashMap<>();
             for (int i = 0; i < videos.length(); i++) {
                 JSONObject item = videos.getJSONObject(i);
                 int oldId = item.optInt("id", -1);
@@ -141,11 +142,11 @@ public final class LibraryTransferManager {
                 }
                 File target = File.createTempFile("video_" + oldId + "_",
                         extension(archived.getName()), mediaDir);
+                copied.put(oldId, target.getAbsolutePath());
                 try (InputStream input = new BufferedInputStream(new FileInputStream(archived));
                      OutputStream output = new BufferedOutputStream(new FileOutputStream(target))) {
                     copy(input, output, Long.MAX_VALUE, null);
                 }
-                copied.put(oldId, target.getAbsolutePath());
             }
 
             AppDatabase db = AppDatabase.getInstance(context);
@@ -210,9 +211,18 @@ public final class LibraryTransferManager {
                     throw new IllegalStateException("تعذر استيراد بيانات المكتبة", e);
                 }
             });
+            importCommitted = true;
             return "تم استيراد " + counts[0] + " قسم جديد و" + counts[1]
                     + " فيديو، وربط " + copied.size() + " ملف فيديو محلي.";
         } finally {
+            if (!importCommitted) {
+                for (String path : copied.values()) {
+                    File orphan = new File(path);
+                    if (orphan.exists() && !orphan.delete()) {
+                        Log.w(TAG, "تعذر حذف ملف استيراد غير مرتبط: " + path);
+                    }
+                }
+            }
             deleteTree(staging);
         }
     }
