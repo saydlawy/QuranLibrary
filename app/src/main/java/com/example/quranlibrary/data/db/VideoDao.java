@@ -14,8 +14,21 @@ import java.util.List;
 @Dao
 public interface VideoDao {
 
-    @Query("SELECT * FROM videos WHERE section_id = :sectionId ORDER BY created_at DESC")
+    @Query("SELECT * FROM videos WHERE section_id = :sectionId "
+            + "ORDER BY CASE WHEN playlist_id IS NULL THEN 1 ELSE 0 END ASC, "
+            + "(SELECT MAX(v2.created_at) FROM videos AS v2 "
+            + "WHERE v2.section_id = videos.section_id AND v2.playlist_id = videos.playlist_id) DESC, "
+            + "CASE WHEN playlist_id IS NOT NULL THEN COALESCE(playlist_position, 2147483647) END ASC, "
+            + "created_at DESC")
     LiveData<List<Video>> getVideosBySection(int sectionId);
+
+    @Query("SELECT * FROM videos WHERE section_id = :sectionId "
+            + "ORDER BY CASE WHEN playlist_id IS NULL THEN 1 ELSE 0 END ASC, "
+            + "(SELECT MAX(v2.created_at) FROM videos AS v2 "
+            + "WHERE v2.section_id = videos.section_id AND v2.playlist_id = videos.playlist_id) DESC, "
+            + "CASE WHEN playlist_id IS NOT NULL THEN COALESCE(playlist_position, 2147483647) END ASC, "
+            + "created_at DESC")
+    List<Video> getVideosBySectionSnapshot(int sectionId);
 
     @Query("SELECT * FROM videos ORDER BY created_at DESC")
     LiveData<List<Video>> getAllVideos();
