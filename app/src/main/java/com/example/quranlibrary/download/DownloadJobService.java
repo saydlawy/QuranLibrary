@@ -250,6 +250,8 @@ public class DownloadJobService extends JobService {
                     throw new IllegalStateException("تعذر تحديد معرّف قائمة التشغيل");
                 }
                 int insertedCount = 0;
+                int duplicateCount = 0;
+                int validEntryCount = 0;
                 for (int i = 0; i < entries.length(); i++) {
                     if (jobCancelled) break;
                     JSONObject entry = entries.optJSONObject(i);
@@ -264,13 +266,13 @@ public class DownloadJobService extends JobService {
                         Log.w(TAG, "تجاوز عنصر قائمة بلا عنوان أو رابط عند الموضع " + (i + 1));
                         continue;
                     }
+                    validEntryCount++;
 
                     Video existing = sourceId.isEmpty()
-                            ? dao.getByUrlAndSection(sectionId, itemUrl)
-                            : dao.getBySourceIdAndSection(sectionId, sourceId);
-                    if (existing != null && playlistId.equals(existing.playlistId)) {
-                        // إعادة إضافة القائمة نفسها لا تنشئ نسخة مكررة ولا تعيد ضبط حالة التنزيل.
-                        insertedCount++;
+                            ? dao.getByUrlSectionAndPlaylist(sectionId, itemUrl, playlistId)
+                            : dao.getBySourceIdSectionAndPlaylist(sectionId, sourceId, playlistId);
+                    if (existing != null) {
+                        duplicateCount++;
                         continue;
                     }
 
@@ -298,15 +300,16 @@ public class DownloadJobService extends JobService {
                             placeholderVideoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
                     return;
                 }
-                if (insertedCount == 0) {
+                if (validEntryCount == 0) {
                     throw new IllegalStateException("لم يمكن استخراج أي فيديو صالح من القائمة");
                 }
 
                 dao.deleteById(placeholderVideoId);
                 expandedPlaylistId = playlistId;
-                Log.i(TAG, "تم تسجيل " + insertedCount + " فيديو من القائمة " + playlistId);
+                Log.i(TAG, "تمت معالجة القائمة " + playlistId + ": أضيف "
+                        + insertedCount + "، وتُجاوز " + duplicateCount + " عنصر مكرر");
                 updateNotification(requestedTitle, 100,
-                        "تم العثور على " + insertedCount + " فيديو؛ بدء التنزيل");
+                        "أضيف " + insertedCount + " فيديو، وتُجاوز " + duplicateCount + " مكرر");
             } catch (Exception e) {
                 Log.e(TAG, "فشل تحليل قائمة التشغيل", e);
                 if (jobCancelled) {
