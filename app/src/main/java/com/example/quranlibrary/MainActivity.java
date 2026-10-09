@@ -11,6 +11,7 @@ import android.view.MenuItem;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+import android.net.Uri;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -24,14 +25,32 @@ import com.example.quranlibrary.ui.DownloadActivity;
 import com.example.quranlibrary.ui.MainViewModel;
 import com.example.quranlibrary.ui.SectionsAdapter;
 import com.example.quranlibrary.ui.SectionVideosActivity;
+import com.example.quranlibrary.data.transfer.LibraryTransferManager;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
     private MainViewModel viewModel;
     private SectionsAdapter adapter;
+
+    private final ExecutorService transferExecutor = Executors.newSingleThreadExecutor();
+
+    private final ActivityResultLauncher<String> exportLauncher =
+            registerForActivityResult(new ActivityResultContracts.CreateDocument("application/zip"),
+                    uri -> {
+                        if (uri != null) runTransfer(uri, true);
+                    });
+
+    private final ActivityResultLauncher<String[]> importLauncher =
+            registerForActivityResult(new ActivityResultContracts.OpenDocument(),
+                    uri -> {
+                        if (uri != null) runTransfer(uri, false);
+                    });
 
     private final ActivityResultLauncher<String> notificationPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -82,7 +101,39 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, DownloadActivity.class));
             return true;
         }
+        if (item.getItemId() == R.id.action_export_library) {
+            exportLauncher.launch("quran-library-backup.zip");
+            return true;
+        }
+        if (item.getItemId() == R.id.action_import_library) {
+            importLauncher.launch(new String[]{"application/zip", "application/octet-stream"});
+            return true;
+        }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void runTransfer(Uri uri, boolean export) {
+        Toast.makeText(this, export ? "جاري تجهيز النسخة الاحتياطية..." : "جاري استيراد المكتبة...",
+                Toast.LENGTH_LONG).show();
+        transferExecutor.execute(() -> {
+            try {
+                String result = export
+                        ? LibraryTransferManager.exportToUri(getApplicationContext(), uri)
+                        : LibraryTransferManager.importFromUri(getApplicationContext(), uri);
+                runOnUiThread(() -> new MaterialAlertDialogBuilder(this)
+                        .setTitle(export ? "اكتمل التصدير" : "اكتمل الاستيراد")
+                        .setMessage(result)
+                        .setPositiveButton("حسنًا", null)
+                        .show());
+            } catch (Exception e) {
+                String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                runOnUiThread(() -> new MaterialAlertDialogBuilder(this)
+                        .setTitle("تعذر إتمام العملية")
+                        .setMessage(message)
+                        .setPositiveButton("حسنًا", null)
+                        .show());
+            }
+        });
     }
 
     private void showAddSectionDialog() {

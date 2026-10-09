@@ -6,4 +6,12 @@
         android:icon="@android:drawable/stat_sys_download"
         android:title="@string/new_download"
         app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/action_export_library"
+        android:title="@string/export_library"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_import_library"
+        android:title="@string/import_library"
+        app:showAsAction="never" />
 </menu>

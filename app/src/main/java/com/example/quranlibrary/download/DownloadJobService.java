@@ -10,9 +10,11 @@ import android.os.Build;
 import android.os.PersistableBundle;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import com.example.quranlibrary.data.db.AppDatabase;
+import com.example.quranlibrary.data.db.Video;
 import com.example.quranlibrary.data.db.VideoDao;
 import com.example.quranlibrary.data.model.DownloadStatus;
 import com.yausername.ffmpeg.FFmpeg;
@@ -20,7 +22,18 @@ import com.yausername.youtubedl_android.YoutubeDL;
 import com.yausername.youtubedl_android.YoutubeDLRequest;
 import com.yausername.youtubedl_android.YoutubeDLResponse;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class DownloadJobService extends JobService {
@@ -33,6 +46,7 @@ public class DownloadJobService extends JobService {
     public static final String EXTRA_SECTION_ID = "extra_section_id";
     public static final String EXTRA_QUALITY = "extra_quality";
     public static final String EXTRA_MODE = "extra_mode";
+    public static final String EXTRA_PLAYLIST_ID = "extra_playlist_id";
 
     private static final String CHANNEL_ID = "download_channel";
     private static final int NOTIFICATION_ID = 1001;
@@ -52,18 +66,10 @@ public class DownloadJobService extends JobService {
         String title = extras.getString(EXTRA_TITLE, "فيديو");
         int quality = extras.getInt(EXTRA_QUALITY, 0);
         String mode = extras.getString(EXTRA_MODE, "auto");
+        String playlistId = extras.getString(EXTRA_PLAYLIST_ID);
 
         if (videoId <= 0 || sectionId <= 0 || url == null || outputDir == null) {
             Log.e(TAG, "بيانات التحميل ناقصة");
-            jobFinished(params, false);
-            return false;
-        }
-
-        if ("playlist".equalsIgnoreCase(mode)) {
-            Log.e(TAG, "وضع playlist مؤجل إلى M6؛ M2 يثبت محرك الفيديو المفرد فقط");
-            VideoDao dao = AppDatabase.getInstance(this).videoDao();
-            dao.updateStatusWithError(videoId, DownloadStatus.FAILED,
-                    "وضع playlist سيُفعل في M6");
             jobFinished(params, false);
             return false;
         }
@@ -75,6 +81,11 @@ public class DownloadJobService extends JobService {
                     JobService.JOB_END_NOTIFICATION_POLICY_REMOVE);
         }
 
+        if ("playlist".equalsIgnoreCase(mode)) {
+            startPlaylistExpansion(params, videoId, sectionId, url, outputDir, quality, title);
+            return true;
+        }
+
         VideoDao dao = AppDatabase.getInstance(this).videoDao();
         final AtomicInteger lastPercent = new AtomicInteger(-1);
         processId = "video-" + videoId;
@@ -82,10 +93,14 @@ public class DownloadJobService extends JobService {
         new Thread(() -> {
             try {
                 initEngine();
-
-                YoutubeDLRequest request = buildRequest(
-                        url, outputDir, quality, mode);
-
+                enrichSingleVideoMetadata(dao, videoId, url);
+                if (jobCancelled) {
+                    dao.updateStatusWithError(
+                            videoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
+                    return;
+                }
+                processId = "video-" + videoId;
+                YoutubeDLRequest request = buildRequest(url, outputDir, quality, mode);
                 dao.updateProgress(videoId, 0, DownloadStatus.DOWNLOADING);
 
                 final String currentProcessId = processId;
@@ -141,11 +156,16 @@ public class DownloadJobService extends JobService {
                     return;
                 }
 
-                dao.markCompleted(
+                Video savedVideo = dao.getVideoById(videoId);
+                long durationMs = savedVideo == null ? 0L : savedVideo.durationMs;
+                String sha256 = computeSha256(output);
+                dao.markCompletedWithMetadata(
                         videoId,
                         finalPath,
                         output.length(),
-                        0,
+                        durationMs,
+                        System.currentTimeMillis(),
+                        sha256,
                         DownloadStatus.COMPLETED);
                 Log.d(TAG, "اكتمل التحميل: " + finalPath);
                 updateNotification(title, 100, "اكتمل التحميل");
@@ -158,13 +178,325 @@ public class DownloadJobService extends JobService {
                         videoId, DownloadStatus.FAILED,
                         e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             } finally {
+                boolean wasCancelled = jobCancelled;
                 processId = null;
                 cancelNotification();
                 jobFinished(params, false);
+                if (!wasCancelled && playlistId != null && !playlistId.trim().isEmpty()) {
+                    scheduleNextPlaylistVideo(playlistId, outputDir, quality);
+                }
             }
         }, "ytdlp-" + videoId).start();
 
         return true;
+    }
+
+    private void startPlaylistExpansion(
+            JobParameters params,
+            int placeholderVideoId,
+            int sectionId,
+            String url,
+            String outputDir,
+            int quality,
+            String requestedTitle) {
+        VideoDao dao = AppDatabase.getInstance(this).videoDao();
+        dao.updateProgress(placeholderVideoId, 0, DownloadStatus.DOWNLOADING);
+        processId = "playlist-" + placeholderVideoId;
+
+        new Thread(() -> {
+            String expandedPlaylistId = null;
+            try {
+                initEngine();
+                YoutubeDLRequest request = new YoutubeDLRequest(url);
+                request.addOption("--flat-playlist");
+                request.addOption("--dump-single-json");
+                request.addOption("--skip-download");
+                request.addOption("--ignore-errors");
+                request.addOption("--no-warnings");
+                request.addOption("--extractor-args", "youtube:player_client=android");
+
+                YoutubeDLResponse response = YoutubeDL.getInstance().execute(
+                        request,
+                        processId,
+                        (progress, eta, line) -> {
+                            updateNotification(requestedTitle, -1, "جاري قراءة عناصر القائمة");
+                            return kotlin.Unit.INSTANCE;
+                        });
+
+                if (jobCancelled) {
+                    dao.updateStatusWithError(
+                            placeholderVideoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
+                    return;
+                }
+                if (response.getExitCode() != 0) {
+                    String error = response.getErr() == null || response.getErr().trim().isEmpty()
+                            ? "تعذر قراءة قائمة التشغيل (yt-dlp exit code "
+                                    + response.getExitCode() + ")"
+                            : response.getErr().trim();
+                    throw new IllegalStateException(error);
+                }
+
+                JSONObject root = parseJsonObject(response.getOut());
+                JSONArray entries = root.optJSONArray("entries");
+                if (entries == null || entries.length() == 0) {
+                    throw new IllegalStateException("لم يعثر yt-dlp على فيديوهات داخل قائمة التشغيل");
+                }
+
+                String playlistId = root.optString("id", "").trim();
+                if (playlistId.isEmpty()) {
+                    playlistId = extractPlaylistId(url);
+                }
+                if (playlistId.isEmpty()) {
+                    throw new IllegalStateException("تعذر تحديد معرّف قائمة التشغيل");
+                }
+                int insertedCount = 0;
+                int duplicateCount = 0;
+                int validEntryCount = 0;
+                for (int i = 0; i < entries.length(); i++) {
+                    if (jobCancelled) break;
+                    JSONObject entry = entries.optJSONObject(i);
+                    if (entry == null || "unavailable".equalsIgnoreCase(entry.optString("_type", ""))) {
+                        continue;
+                    }
+
+                    String sourceId = entry.optString("id", "").trim();
+                    String itemUrl = resolveEntryUrl(entry, sourceId);
+                    String itemTitle = entry.optString("title", "").trim();
+                    if (itemUrl.isEmpty() || itemTitle.isEmpty()) {
+                        Log.w(TAG, "تجاوز عنصر قائمة بلا عنوان أو رابط عند الموضع " + (i + 1));
+                        continue;
+                    }
+                    validEntryCount++;
+
+                    Video existing = sourceId.isEmpty()
+                            ? dao.getByUrlSectionAndPlaylist(sectionId, itemUrl, playlistId)
+                            : dao.getBySourceIdSectionAndPlaylist(sectionId, sourceId, playlistId);
+                    if (existing != null) {
+                        duplicateCount++;
+                        continue;
+                    }
+
+                    Video video = new Video(sectionId, itemTitle, itemUrl);
+                    video.sourceId = sourceId.isEmpty() ? null : sourceId;
+                    video.sourceType = entry.optString("extractor_key",
+                            entry.optString("extractor", "youtube"));
+                    video.channelName = firstNonEmpty(
+                            entry.optString("channel", ""),
+                            entry.optString("uploader", ""));
+                    video.thumbnailUrl = firstNonEmpty(
+                            entry.optString("thumbnail", ""),
+                            findThumbnail(entry.optJSONArray("thumbnails")));
+                    video.publishedAt = parsePublishedAt(entry.optString("upload_date", ""));
+                    video.playlistId = playlistId;
+                    video.playlistPosition = entry.optInt("playlist_index", i + 1);
+                    video.durationMs = Math.max(0L, entry.optLong("duration", 0L)) * 1000L;
+                    video.metadataStatus = "AVAILABLE";
+                    dao.insert(video);
+                    insertedCount++;
+                }
+
+                if (jobCancelled) {
+                    dao.updateStatusWithError(
+                            placeholderVideoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
+                    return;
+                }
+                if (validEntryCount == 0) {
+                    throw new IllegalStateException("لم يمكن استخراج أي فيديو صالح من القائمة");
+                }
+
+                dao.deleteById(placeholderVideoId);
+                expandedPlaylistId = playlistId;
+                Log.i(TAG, "تمت معالجة القائمة " + playlistId + ": أضيف "
+                        + insertedCount + "، وتُجاوز " + duplicateCount + " عنصر مكرر");
+                updateNotification(requestedTitle, 100,
+                        "أضيف " + insertedCount + " فيديو، وتُجاوز " + duplicateCount + " مكرر");
+            } catch (Exception e) {
+                Log.e(TAG, "فشل تحليل قائمة التشغيل", e);
+                if (jobCancelled) {
+                    dao.updateStatusWithError(
+                            placeholderVideoId, DownloadStatus.CANCELLED, "أُلغي بواسطة المستخدم");
+                } else {
+                    dao.updateStatusWithError(
+                            placeholderVideoId, DownloadStatus.FAILED,
+                            e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+                }
+            } finally {
+                boolean wasCancelled = jobCancelled;
+                processId = null;
+                cancelNotification();
+                jobFinished(params, false);
+                if (!wasCancelled && expandedPlaylistId != null) {
+                    scheduleNextPlaylistVideo(expandedPlaylistId, outputDir, quality);
+                }
+            }
+        }, "ytdlp-playlist-" + placeholderVideoId).start();
+    }
+
+    private void scheduleNextPlaylistVideo(String playlistId, String outputDir, int quality) {
+        VideoDao dao = AppDatabase.getInstance(this).videoDao();
+        Video next = dao.getNextPendingPlaylistVideo(playlistId);
+        while (next != null) {
+            boolean scheduled = DownloadScheduler.schedule(
+                    getApplicationContext(),
+                    next.id,
+                    next.sectionId,
+                    next.youtubeUrl,
+                    outputDir,
+                    next.title,
+                    quality,
+                    "video",
+                    playlistId);
+            if (scheduled) {
+                Log.i(TAG, "تمت جدولة عنصر القائمة " + next.playlistPosition + ": " + next.title);
+                return;
+            }
+            dao.updateStatusWithError(
+                    next.id, DownloadStatus.FAILED, "تعذر جدولة تنزيل عنصر قائمة التشغيل");
+            next = dao.getNextPendingPlaylistVideo(playlistId);
+        }
+        Log.i(TAG, "لا توجد عناصر قائمة تشغيل معلقة: " + playlistId);
+    }
+
+    private JSONObject parseJsonObject(String output) throws Exception {
+        if (output == null) {
+            throw new IllegalStateException("لم يرجع yt-dlp بيانات قائمة التشغيل");
+        }
+        int start = output.indexOf('{');
+        int end = output.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            throw new IllegalStateException("استجابة yt-dlp ليست JSON صالحًا");
+        }
+        return new JSONObject(output.substring(start, end + 1));
+    }
+
+    private String resolveEntryUrl(JSONObject entry, String sourceId) {
+        String webpageUrl = firstNonEmpty(
+                entry.optString("webpage_url", ""),
+                entry.optString("original_url", ""));
+        if (webpageUrl.startsWith("http://") || webpageUrl.startsWith("https://")) {
+            return webpageUrl;
+        }
+        String url = entry.optString("url", "");
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        if (!sourceId.isEmpty()) {
+            return "https://www.youtube.com/watch?v=" + sourceId;
+        }
+        return "";
+    }
+
+    private String extractPlaylistId(String url) {
+        if (url == null) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("[?&]list=([^&#]+)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                .matcher(url);
+        return matcher.find() ? matcher.group(1) : "";
+    }
+
+    private String firstNonEmpty(String first, String second) {
+        if (first != null && !first.trim().isEmpty()) return first.trim();
+        return second == null ? "" : second.trim();
+    }
+
+    @Nullable
+    private String findThumbnail(@Nullable JSONArray thumbnails) {
+        if (thumbnails == null) return null;
+        for (int i = thumbnails.length() - 1; i >= 0; i--) {
+            JSONObject item = thumbnails.optJSONObject(i);
+            if (item != null) {
+                String url = item.optString("url", "");
+                if (!url.isEmpty()) return url;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private Long parsePublishedAt(String uploadDate) {
+        if (uploadDate == null || !uploadDate.matches("\\d{8}")) return null;
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd", Locale.US);
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try {
+            Date date = format.parse(uploadDate);
+            return date == null ? null : date.getTime();
+        } catch (ParseException e) {
+            return null;
+        }
+    }
+
+    private void enrichSingleVideoMetadata(VideoDao dao, int videoId, String url) {
+        Video video = dao.getVideoById(videoId);
+        if (video == null) return;
+
+        try {
+            YoutubeDLRequest request = new YoutubeDLRequest(url);
+            request.addOption("--dump-single-json");
+            request.addOption("--skip-download");
+            request.addOption("--no-playlist");
+            request.addOption("--no-warnings");
+            request.addOption("--extractor-args", "youtube:player_client=android");
+
+            String metadataProcessId = "metadata-" + videoId;
+            processId = metadataProcessId;
+            YoutubeDLResponse response = YoutubeDL.getInstance().execute(
+                    request,
+                    metadataProcessId,
+                    (progress, eta, line) -> kotlin.Unit.INSTANCE);
+            if (response.getExitCode() != 0) {
+                throw new IllegalStateException("yt-dlp metadata exit code " + response.getExitCode());
+            }
+
+            JSONObject metadata = parseJsonObject(response.getOut());
+            String sourceTitle = metadata.optString("title", "").trim();
+            if (!sourceTitle.isEmpty()
+                    && (video.title == null || video.title.trim().isEmpty()
+                    || "فيديو جديد".equals(video.title) || "فيديو".equals(video.title))) {
+                video.title = sourceTitle;
+            }
+            video.sourceId = firstNonEmpty(metadata.optString("id", ""), video.sourceId);
+            video.sourceType = firstNonEmpty(
+                    metadata.optString("extractor_key", ""),
+                    metadata.optString("extractor", "youtube"));
+            video.channelName = firstNonEmpty(
+                    metadata.optString("channel", ""),
+                    metadata.optString("uploader", ""));
+            video.thumbnailUrl = firstNonEmpty(
+                    metadata.optString("thumbnail", ""),
+                    findThumbnail(metadata.optJSONArray("thumbnails")));
+            video.publishedAt = parsePublishedAt(metadata.optString("upload_date", ""));
+            video.durationMs = Math.max(0L, metadata.optLong("duration", 0L)) * 1000L;
+            video.metadataStatus = "AVAILABLE";
+            dao.update(video);
+        } catch (Exception e) {
+            Log.w(TAG, "تعذر استخراج البيانات الوصفية؛ سيستمر تنزيل الفيديو", e);
+            Video latest = dao.getVideoById(videoId);
+            if (latest != null) {
+                latest.metadataStatus = "FAILED";
+                dao.update(latest);
+            }
+        }
+    }
+
+    private String computeSha256(File file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            try (InputStream input = new FileInputStream(file)) {
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    digest.update(buffer, 0, read);
+                }
+            }
+            StringBuilder hex = new StringBuilder(64);
+            for (byte value : digest.digest()) {
+                hex.append(String.format(Locale.US, "%02x", value & 0xff));
+            }
+            return hex.toString();
+        } catch (Exception e) {
+            Log.w(TAG, "تعذر حساب SHA-256 للملف " + file.getName(), e);
+            return null;
+        }
     }
 
     private void initEngine() throws Exception {
@@ -187,7 +519,7 @@ public class DownloadJobService extends JobService {
             request.addOption("--merge-output-format", "mp4");
         }
 
-        request.addOption("-o", new File(outputDir, "%(title)s.%(ext)s").getAbsolutePath());
+        request.addOption("-o", new File(outputDir, "%(title)s [%(id)s].%(ext)s").getAbsolutePath());
         request.addOption("--print", "after_move:filepath");
         request.addOption("--no-mtime");
         request.addOption("--retries", "5");
@@ -198,13 +530,11 @@ public class DownloadJobService extends JobService {
         request.addOption("--trim-filenames", "150");
         request.addOption("--newline");
         request.addOption("--no-warnings");
-        // YouTube currently has SABR/403 cases on some clients; Android client returns direct CDN URLs.
         request.addOption("--extractor-args", "youtube:player_client=android");
 
         if ("video".equalsIgnoreCase(mode) || "auto".equalsIgnoreCase(mode)) {
             request.addOption("--no-playlist");
         }
-
         return request;
     }
 

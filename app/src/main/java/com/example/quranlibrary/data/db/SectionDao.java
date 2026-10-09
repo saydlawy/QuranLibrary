@@ -25,6 +25,12 @@ public interface SectionDao {
     @Query("SELECT COUNT(*) FROM sections")
     int getCount();
 
+    @Query("SELECT * FROM sections ORDER BY sort_order ASC, id ASC")
+    List<Section> getAllSectionsSnapshot();
+
+    @Query("SELECT * FROM sections WHERE name = :name LIMIT 1")
+    Section getSectionByName(String name);
+
     @Insert
     long insert(Section section);
 

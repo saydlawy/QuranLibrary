@@ -1,22 +1,30 @@
 package com.example.quranlibrary.ui;
 
+import android.content.ComponentName;
 import android.net.Uri;
 import android.os.Bundle;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
-import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.session.MediaController;
+import androidx.media3.session.SessionToken;
 import androidx.media3.ui.PlayerView;
 
 import com.example.quranlibrary.R;
 import com.example.quranlibrary.data.repository.VideoRepository;
+import com.example.quranlibrary.playback.PlaybackService;
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import java.io.File;
+import java.util.concurrent.ExecutionException;
 
 public class VideoPlayerActivity extends AppCompatActivity {
 
@@ -24,11 +32,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
     public static final String EXTRA_VIDEO_TITLE = "extra_video_title";
     public static final String EXTRA_FILE_PATH = "extra_file_path";
     public static final String EXTRA_POSITION_MS = "extra_position_ms";
+    private static final String STATE_POSITION_MS = "state_position_ms";
 
-    private ExoPlayer player;
+    private ListenableFuture<MediaController> controllerFuture;
+    private MediaController mediaController;
+    private PlayerView playerView;
     private VideoRepository repository;
     private int videoId;
     private long initialPositionMs;
+    private String videoTitle;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -42,13 +54,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
         toolbar.setNavigationOnClickListener(v -> finish());
 
-        String title = getIntent().getStringExtra(EXTRA_VIDEO_TITLE);
-        toolbar.setTitle(title == null || title.trim().isEmpty()
-                ? getString(R.string.app_name)
-                : title);
+        videoTitle = getIntent().getStringExtra(EXTRA_VIDEO_TITLE);
+        if (videoTitle == null || videoTitle.trim().isEmpty()) {
+            videoTitle = getString(R.string.app_name);
+        }
+        toolbar.setTitle(videoTitle);
 
         videoId = getIntent().getIntExtra(EXTRA_VIDEO_ID, -1);
-        initialPositionMs = Math.max(0L, getIntent().getLongExtra(EXTRA_POSITION_MS, 0L));
+        initialPositionMs = savedInstanceState == null
+                ? Math.max(0L, getIntent().getLongExtra(EXTRA_POSITION_MS, 0L))
+                : Math.max(0L, savedInstanceState.getLong(STATE_POSITION_MS, 0L));
         String filePath = getIntent().getStringExtra(EXTRA_FILE_PATH);
 
         if (videoId <= 0 || filePath == null || filePath.trim().isEmpty()) {
@@ -65,26 +80,48 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
 
         repository = new VideoRepository(getApplication());
-        PlayerView playerView = findViewById(R.id.playerView);
+        playerView = findViewById(R.id.playerView);
+        connectToPlaybackService(file);
+    }
 
-        player = new ExoPlayer.Builder(this).build();
-        playerView.setPlayer(player);
-        player.addListener(new Player.Listener() {
-            @Override
-            public void onPlayerError(@androidx.annotation.NonNull PlaybackException error) {
-                Toast.makeText(VideoPlayerActivity.this,
-                        R.string.video_playback_error,
-                        Toast.LENGTH_LONG).show();
+    private void connectToPlaybackService(File file) {
+        SessionToken token = new SessionToken(
+                this, new ComponentName(this, PlaybackService.class));
+        controllerFuture = new MediaController.Builder(this, token).buildAsync();
+        controllerFuture.addListener(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            try {
+                mediaController = controllerFuture.get();
+                playerView.setPlayer(mediaController);
+                mediaController.addListener(new Player.Listener() {
+                    @Override
+                    public void onPlayerError(@NonNull PlaybackException error) {
+                        Toast.makeText(VideoPlayerActivity.this,
+                                R.string.video_playback_error,
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
+
+                MediaMetadata metadata = new MediaMetadata.Builder()
+                        .setTitle(videoTitle)
+                        .build();
+                MediaItem item = new MediaItem.Builder()
+                        .setUri(Uri.fromFile(file))
+                        .setMediaMetadata(metadata)
+                        .build();
+                mediaController.setMediaItem(item);
+                mediaController.prepare();
+                if (initialPositionMs > 0L) {
+                    mediaController.seekTo(initialPositionMs);
+                }
+                mediaController.play();
+            } catch (ExecutionException e) {
+                Toast.makeText(this, R.string.video_playback_error, Toast.LENGTH_LONG).show();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                Toast.makeText(this, R.string.video_playback_error, Toast.LENGTH_LONG).show();
             }
-        });
-
-        MediaItem mediaItem = MediaItem.fromUri(Uri.fromFile(file));
-        player.setMediaItem(mediaItem);
-        player.prepare();
-        if (initialPositionMs > 0) {
-            player.seekTo(initialPositionMs);
-        }
-        player.play();
+        }, ContextCompat.getMainExecutor(this));
     }
 
     @Override
@@ -95,25 +132,40 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onStop() {
-        // Keep playback running when the activity moves to the background.
-        // Persist the current position without pausing the player.
         savePosition();
         super.onStop();
     }
 
     @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        if (mediaController != null) {
+            outState.putLong(STATE_POSITION_MS,
+                    Math.max(0L, mediaController.getCurrentPosition()));
+        } else {
+            outState.putLong(STATE_POSITION_MS, initialPositionMs);
+        }
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
     protected void onDestroy() {
         savePosition();
-        if (player != null) {
-            player.release();
-            player = null;
+        if (playerView != null) {
+            playerView.setPlayer(null);
         }
+        if (controllerFuture != null) {
+            MediaController.releaseFuture(controllerFuture);
+            controllerFuture = null;
+        }
+        mediaController = null;
         super.onDestroy();
     }
 
     private void savePosition() {
-        if (repository != null && videoId > 0 && player != null) {
-            repository.updateWatchPosition(videoId, Math.max(0L, player.getCurrentPosition()));
+        if (repository != null && videoId > 0 && mediaController != null) {
+            long position = Math.max(0L, mediaController.getCurrentPosition());
+            initialPositionMs = position;
+            repository.updateWatchPosition(videoId, position);
         }
     }
 }
