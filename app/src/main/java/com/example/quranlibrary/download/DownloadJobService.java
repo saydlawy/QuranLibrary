@@ -265,6 +265,15 @@ public class DownloadJobService extends JobService {
                         continue;
                     }
 
+                    Video existing = sourceId.isEmpty()
+                            ? dao.getByUrlAndSection(sectionId, itemUrl)
+                            : dao.getBySourceIdAndSection(sectionId, sourceId);
+                    if (existing != null && playlistId.equals(existing.playlistId)) {
+                        // إعادة إضافة القائمة نفسها لا تنشئ نسخة مكررة ولا تعيد ضبط حالة التنزيل.
+                        insertedCount++;
+                        continue;
+                    }
+
                     Video video = new Video(sectionId, itemTitle, itemUrl);
                     video.sourceId = sourceId.isEmpty() ? null : sourceId;
                     video.sourceType = entry.optString("extractor_key",
