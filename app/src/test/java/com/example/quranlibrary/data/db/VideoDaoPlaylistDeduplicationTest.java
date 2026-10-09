@@ -60,6 +60,32 @@ public class VideoDaoPlaylistDeduplicationTest {
     }
 
     @Test
+    public void sectionSnapshotPreservesPlaylistPositionBeforeStandaloneVideos() {
+        Video second = new Video(sectionId, "الفيديو الثاني", "https://example.com/second");
+        second.playlistId = "PL_ORDER";
+        second.playlistPosition = 2;
+        second.createdAt = 200L;
+        videoDao.insert(second);
+
+        Video first = new Video(sectionId, "الفيديو الأول", "https://example.com/first");
+        first.playlistId = "PL_ORDER";
+        first.playlistPosition = 1;
+        first.createdAt = 100L;
+        videoDao.insert(first);
+
+        Video standalone = new Video(sectionId, "فيديو منفرد", "https://example.com/solo");
+        standalone.createdAt = 300L;
+        videoDao.insert(standalone);
+
+        java.util.List<Video> ordered = videoDao.getVideosBySectionSnapshot(sectionId);
+
+        assertEquals(3, ordered.size());
+        assertEquals("الفيديو الأول", ordered.get(0).title);
+        assertEquals("الفيديو الثاني", ordered.get(1).title);
+        assertEquals("فيديو منفرد", ordered.get(2).title);
+    }
+
+    @Test
     public void urlQueryFindsDuplicateWhenSourceIdIsUnavailable() {
         String url = "https://example.com/watch/without-id";
         Video video = new Video(sectionId, "فيديو بلا معرّف", url);
