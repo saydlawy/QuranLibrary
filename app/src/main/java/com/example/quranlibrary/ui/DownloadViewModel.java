@@ -88,6 +88,7 @@ public class DownloadViewModel extends AndroidViewModel {
 
             ContextCompat.getMainExecutor(getApplication()).execute(() -> {
                 observeVideo(videoId);
+                String effectiveMode = isPlaylistUrl(cleanUrl) ? "playlist" : mode;
                 boolean scheduled = DownloadScheduler.schedule(
                         getApplication(),
                         videoId,
@@ -96,7 +97,7 @@ public class DownloadViewModel extends AndroidViewModel {
                         outputDir.getAbsolutePath(),
                         cleanTitle,
                         quality,
-                        mode);
+                        effectiveMode);
                 if (scheduled) {
                     isDownloading.setValue(true);
                     statusMessage.setValue("بدأ التحميل في الخلفية");
@@ -106,6 +107,10 @@ public class DownloadViewModel extends AndroidViewModel {
                 }
             });
         }).start();
+    }
+
+    private boolean isPlaylistUrl(String url) {
+        return url != null && url.matches("(?is).*([?&]list=)[^&]+.*");
     }
 
     private void observeVideo(int videoId) {
