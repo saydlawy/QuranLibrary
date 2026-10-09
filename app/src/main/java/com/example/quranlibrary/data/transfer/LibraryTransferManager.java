@@ -227,7 +227,7 @@ public final class LibraryTransferManager {
         }
     }
 
-    private static JSONObject videoToJson(Video v) throws Exception {
+    static JSONObject videoToJson(Video v) throws Exception {
         JSONObject o = new JSONObject();
         o.put("id", v.id);
         o.put("sectionId", v.sectionId);
@@ -255,7 +255,7 @@ public final class LibraryTransferManager {
         return o;
     }
 
-    private static Video videoFromJson(JSONObject o, int sectionId) {
+    static Video videoFromJson(JSONObject o, int sectionId) {
         Video v = new Video(sectionId, o.optString("title", "فيديو مستورد"),
                 o.optString("youtubeUrl", ""));
         v.durationMs = o.optLong("durationMs", 0);
